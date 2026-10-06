@@ -19,26 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
--------------------------------------------------------------------------------
-
-第三方组件许可说明 / Third-party components
--------------------------------------------
-
-本项目自身代码采用 MIT。以下组件**不随本仓库分发**，仅在构建/运行时获取，
-其许可归各自作者所有：
-
-  * YuNet 人脸检测模型 (face_detection_yunet_2023mar.onnx)
-      - 来源: https://github.com/opencv/opencv_zoo
-      - 许可: MIT
-  * SFace 人脸识别模型 (face_recognition_sface_2021dec.onnx)
-      - 来源: https://github.com/opencv/opencv_zoo
-      - 许可: Apache License 2.0
-  * OpenCV / opencv-python-headless 4.11
-      - 来源: https://github.com/opencv/opencv-python
-      - 许可: Apache License 2.0
-  * Tauri (GUI 外壳) / WebKitGTK
-      - 许可: MIT / Apache-2.0 / LGPL
-
-反例说明: InsightFace 的预训练模型明确限制为「仅限非商业研究」，
-因此本项目未采用（见 README「技术选型与踩过的坑」第 7 条）。

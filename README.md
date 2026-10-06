@@ -488,16 +488,21 @@ sudo apt purge faceunlock-full   # 连 /var/lib/faceunlock 一起删掉
 
 ## 许可证
 
-本项目代码采用 **MIT**。随包分发的第三方组件分别为：
+本项目代码采用 **MIT**（见 [LICENSE](LICENSE)）。
 
-| 组件 | 许可证 |
-|---|---|
-| YuNet（`face_detection_yunet_2023mar.onnx`） | MIT |
-| SFace（`face_recognition_sface_2021dec.onnx`） | Apache-2.0 |
-| OpenCV 4.11（`opencv-python-headless`） | Apache-2.0 |
-| Tauri / WebKitGTK | MIT / Apache-2.0 / LGPL |
+**第三方组件**（模型与 OpenCV **不随本仓库分发**，请自行获取并遵守其许可证）：
 
-模型与 OpenCV **不随本仓库分发**，请自行获取并遵守其许可证。
+| 组件 | 许可证 | 来源 |
+|---|---|---|
+| YuNet（`face_detection_yunet_2023mar.onnx`） | MIT | [opencv_zoo](https://github.com/opencv/opencv_zoo) |
+| SFace（`face_recognition_sface_2021dec.onnx`） | Apache-2.0 | [opencv_zoo](https://github.com/opencv/opencv_zoo) |
+| OpenCV 4.11（`opencv-python-headless`） | Apache-2.0 | [opencv-python](https://github.com/opencv/opencv-python) |
+| Tauri / WebKitGTK | MIT / Apache-2.0 / LGPL | [tauri](https://github.com/tauri-apps/tauri) |
+
+Debian 打包的完整版权声明见 [`debian/copyright`](debian/copyright)。
+
+> 反例说明：InsightFace 的预训练模型明确限制为「仅限非商业研究」，
+> 因此本项目未采用（见 [技术选型与踩过的坑](#技术选型与踩过的坑) 第 7 条）。
 
 ---
 
