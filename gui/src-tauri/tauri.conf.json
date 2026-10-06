@@ -1,0 +1,30 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "faceunlock",
+  "version": "0.1.0",
+  "identifier": "org.faceunlock.gui",
+  "build": {
+    "frontendDist": "../src"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["deb"],
+    "category": "Utility",
+    "shortDescription": "人脸识别登录管理界面",
+    "longDescription": "faceunlock 管理界面：录入/管理人脸模板、测试识别阈值、开关 PAM 集成。",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

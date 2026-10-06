@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=人脸识别管理
+Name[en]=Face Unlock
+GenericName=人脸识别登录管理
+Comment=管理人脸识别登录模板、测试识别效果、开关各场景
+Comment[en]=Manage face templates, test recognition, toggle PAM scenarios
+Exec=faceunlock-gui
+Icon=faceunlock
+Terminal=false
+Categories=System;Settings;Security;
+Keywords=Face;Biometric;Login;PAM;人脸;识别;
+StartupNotify=true

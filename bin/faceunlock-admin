@@ -1,0 +1,22 @@
+#!/usr/bin/python3
+"""特权助手入口：由 pkexec 以 root 拉起，提供 JSON-Lines 服务。
+
+GUI 网桥用: pkexec /usr/libexec/faceunlock-admin serve
+调试单发  : faceunlock-admin '{"cmd":"doctor"}'
+"""
+from __future__ import annotations
+
+import os
+import sys
+
+_BASE = os.environ.get("FACEUNLOCK_BASE", "/usr/lib/faceunlock")
+if not os.path.isdir(os.path.join(_BASE, "faceunlock")):
+    _BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+for _p in (os.path.join(_BASE, "vendor"), _BASE):
+    if os.path.isdir(_p) and _p not in sys.path:
+        sys.path.insert(0, _p)
+
+from faceunlock.admin import main  # noqa: E402
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))

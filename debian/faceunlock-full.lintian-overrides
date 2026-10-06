@@ -1,0 +1,7 @@
+# 随包分发的 opencv-python-headless 4.11 wheel 里自带 libjpeg / libpng /
+# openjpeg / libav* / libsw*。我们刻意不做"用系统库替换"的二次链接：
+#   * 本机（以及目标机）的 Ubuntu 24.04 没有可用的 OpenCV 4.8+ 系统库；
+#   * 改动上游二进制会让我们无法用 sha256 证明"这正是官方 wheel 的内容"。
+# 同理，这些第三方 .so 保持与上游逐字节一致，不做 strip。
+faceunlock-full binary: embedded-library
+faceunlock-full binary: unstripped-binary-or-object

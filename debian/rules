@@ -1,0 +1,61 @@
+#!/usr/bin/make -f
+#
+# faceunlock 打包规则
+#
+# 几个刻意的选择：
+#  * 不用 pybuild/dh_python3：我们把 opencv 连同私有库一起随包分发到
+#    /usr/lib/faceunlock/vendor，不需要也不应该让 dh_python3 去字节编译它。
+#  * Architecture 固定 amd64：vendor/ 里是 manylinux x86_64 wheel 的解包结果。
+#  * dh_shlibdeps 排除 vendor/：里面第三方 .so 通过 RPATH $ORIGIN/../*.libs
+#    私有加载，dpkg-shlibdeps 找不到；相关系统依赖在 debian/control 显式声明。
+
+export DH_VERBOSE=1
+export LC_ALL=C.UTF-8
+export PYTHONDONTWRITEBYTECODE=1
+
+ARCH_TRIPLET := $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
+
+%:
+	dh $@
+
+override_dh_auto_configure:
+	true
+
+override_dh_auto_build:
+	$(CC) $(CPPFLAGS) $(CFLAGS) -shared -fPIC -O2 -Wall -Wextra \
+		-o pam/pam_faceunlock.so pam/pam_faceunlock.c -lpam
+
+override_dh_auto_test:
+	true
+
+override_dh_auto_install:
+	# 内容安装逻辑集中在 packaging/install-tree.sh，三个二进制包共用：
+	#   faceunlock       core
+	#   faceunlock-gui   gui
+	#   faceunlock-full  all（自包含完整包，与上面两个 Conflicts）
+	chmod +x packaging/install-tree.sh
+	bash packaging/install-tree.sh core debian/faceunlock
+	bash packaging/install-tree.sh gui  debian/faceunlock-gui
+	bash packaging/install-tree.sh all  debian/faceunlock-full
+
+override_dh_strip:
+	dh_strip --no-automatic-dbgsym -X/usr/lib/faceunlock/vendor
+
+override_dh_shlibdeps:
+	dh_shlibdeps -X/usr/lib/faceunlock/vendor
+
+override_dh_dwz:
+	# vendor/ 里的第三方 .so 没有 debug_info，dwz 会直接报错中止构建。
+	# dwz 只是体积优化，跳过不影响功能。
+	true
+
+override_dh_makeshlibs:
+	true
+
+override_dh_compress:
+	# 模型是二进制，压了会加载失败
+	dh_compress -X.onnx
+
+override_dh_auto_clean:
+	rm -f pam/pam_faceunlock.so
+	dh_auto_clean

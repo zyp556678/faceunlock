@@ -1,0 +1,7 @@
+Name: Face authentication (faceunlock)
+Default: no
+Priority: 262
+Conflicts: howdy, face-unlock
+Auth-Type: Primary
+Auth:
+	sufficient	pam_faceunlock.so

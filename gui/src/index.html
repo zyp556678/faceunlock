@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>faceunlock · 人脸识别登录管理</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- 后端不可用时的兜底页（由 app.js 控制显示） -->
+  <div id="fatal" class="fatal hidden">
+    <div class="fatal-card">
+      <h1>无法连接后端服务</h1>
+      <p id="fatal-msg" class="muted"></p>
+      <pre class="fatal-hint">排查：确认 /usr/libexec/faceunlock-gui-bridge 存在且可执行；
+开发期可用 FACEUNLOCK_GUI_BRIDGE=/path/to/bin/faceunlock-gui-bridge 指定路径。</pre>
+    </div>
+  </div>
+
+  <div id="app" class="hidden">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="logo">◔</div>
+        <div class="brand-text">
+          <h1>faceunlock</h1>
+          <p>人脸识别登录</p>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-item active" data-tab="faces"><span class="ico">☺</span>人脸管理</button>
+        <button class="nav-item" data-tab="verify"><span class="ico">◎</span>识别测试</button>
+        <button class="nav-item" data-tab="settings"><span class="ico">⚙</span>设置</button>
+      </nav>
+
+      <div class="side-foot">
+        <div id="backend-state" class="pill warn">连接中…</div>
+        <div class="side-meta">
+          <span id="meta-user">–</span> · v<span id="meta-version">–</span>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <!-- ========== 人脸管理 ========== -->
+      <section id="tab-faces" class="tab active">
+        <header class="page-head">
+          <div>
+            <h2>人脸管理</h2>
+            <p class="muted">模板只保存 128 维特征（不可逆）与可选缩略图。管理他人需要管理员授权。</p>
+          </div>
+          <div class="head-actions">
+            <label class="field inline">用户
+              <select id="user-select"></select>
+            </label>
+            <button id="btn-refresh" class="btn ghost">刷新</button>
+            <button id="btn-add-face" class="btn primary">＋ 添加人脸</button>
+          </div>
+        </header>
+
+        <div class="preview-bar">
+          <button id="btn-preview" class="btn ghost small">开启实时预览</button>
+          <span class="muted small">MJPEG 预览，同一时刻只允许一个消费者；录入/测试会自动暂停它。</span>
+        </div>
+
+        <div id="auth-banner" class="banner hidden">
+          <span>需要管理员授权才能读写人脸模板</span>
+          <button id="btn-retry-auth" class="btn small">重试</button>
+        </div>
+
+        <div id="faces-grid" class="grid"></div>
+        <div id="faces-empty" class="empty hidden">
+          <div class="empty-ico">☺</div>
+          <p>该用户还没有录入人脸</p>
+          <button class="btn primary" id="btn-add-face-2">立即添加人脸</button>
+        </div>
+      </section>
+
+      <!-- ========== 识别测试 ========== -->
+      <section id="tab-verify" class="tab">
+        <header class="page-head">
+          <div>
+            <h2>识别测试</h2>
+            <p class="muted">边看画面边看相似度，用来确认阈值是否合适。本机实测：坐正时本人 0.86~0.96，坐姿不佳时 0.44~0.49，冒充者最高 0.092。</p>
+          </div>
+          <div class="head-actions">
+            <button id="btn-verify-start" class="btn primary">开始测试</button>
+            <button id="btn-verify-stop" class="btn ghost" disabled>停止</button>
+          </div>
+        </header>
+
+        <div class="verify-layout">
+          <div class="video-wrap">
+            <canvas id="verify-canvas" width="640" height="360"></canvas>
+            <div id="verify-badge" class="badge idle">未开始</div>
+            <div id="verify-idle" class="video-idle">点击「开始测试」打开摄像头</div>
+          </div>
+
+          <div class="verify-side">
+            <div class="card">
+              <div class="card-title">相似度</div>
+              <div class="score-num"><span id="score-value">–</span><small id="score-thr">阈值 –</small></div>
+              <div class="score-bar">
+                <div id="score-fill" class="score-fill" style="width:0%"></div>
+                <div id="score-mark" class="score-mark" style="left:50%"><span>阈值</span></div>
+              </div>
+              <p id="verify-msg" class="muted small">等待开始…</p>
+            </div>
+            <div class="card">
+              <div class="card-title">怎么看这个分数</div>
+              <ul class="tips">
+                <li>分数 = 当前人脸与模板库中<b>最高</b>的余弦相似度。</li>
+                <li>绿色徽标表示 ≥ 阈值，登录时会被判定为通过。</li>
+                <li>若本人分数长期低于阈值，请到「人脸管理」重新录入（注意光线与清晰度）。</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========== 设置 ========== -->
+      <section id="tab-settings" class="tab">
+        <header class="page-head">
+          <div>
+            <h2>设置</h2>
+            <p class="muted">配置写入 /etc/faceunlock/config.json（仅管理员可写），认证路径对它只读。</p>
+          </div>
+          <div class="head-actions">
+            <button id="btn-doctor" class="btn ghost">重新自检</button>
+          </div>
+        </header>
+
+        <div class="settings-grid">
+          <div class="card">
+            <div class="card-title">总开关</div>
+            <label class="switch">
+              <input type="checkbox" id="cfg-enabled">
+              <span class="slider"></span>
+              <span class="switch-label">启用人脸识别登录</span>
+            </label>
+            <p class="muted small">关闭后 PAM 助手立即返回「不适用」，等于彻底停用人脸（密码照常可用）。</p>
+          </div>
+
+          <div class="card">
+            <div class="card-title">场景开关</div>
+            <div id="services-box" class="services"></div>
+          </div>
+
+          <div class="card span-2">
+            <div class="card-title">阈值</div>
+            <div class="slider-row">
+              <input type="range" id="cfg-threshold" min="0.20" max="0.90" step="0.01" value="0.50">
+              <output id="threshold-out">0.50</output>
+            </div>
+            <p class="muted small">本机实测：本人 0.86~0.96（坐正）/ 0.44~0.49（偏头），冒充者最高 0.092，建议 0.40。调低更易通过但更易被冒用；调高更严格。</p>
+          </div>
+
+          <div class="card">
+            <div class="card-title">多帧投票</div>
+            <div class="rows">
+              <label class="row"><span>窗口帧数</span><input type="number" id="cfg-window" min="1" max="10" step="1"></label>
+              <label class="row"><span>命中帧数</span><input type="number" id="cfg-required" min="1" max="10" step="1"></label>
+              <label class="row"><span>最长等待 (ms)</span><input type="number" id="cfg-timeout" min="200" max="60000" step="100"></label>
+              <label class="row"><span>无人超时 (ms)</span><input type="number" id="cfg-no-face" min="200" max="60000" step="100"></label>
+            </div>
+            <button id="btn-save-vote" class="btn small">保存</button>
+          </div>
+
+          <div class="card">
+            <div class="card-title">PAM 集成</div>
+            <div id="pam-box" class="rows small"></div>
+            <div class="btn-row">
+              <button id="btn-pam-enable" class="btn small">启用人脸认证</button>
+              <button id="btn-pam-disable" class="btn small ghost">停用人脸认证</button>
+            </div>
+          </div>
+
+          <div class="card danger-card">
+            <div class="card-title">一键停用（panic）</div>
+            <p class="muted small">关闭总开关并从 PAM 栈移除人脸模块，用于「人脸出问题进不去系统」时快速还原。之后仍可用密码登录。</p>
+            <button id="btn-panic" class="btn danger">一键停用</button>
+          </div>
+
+          <div class="card span-2">
+            <div class="card-title">自检</div>
+            <table class="doctor-table">
+              <thead><tr><th>检查项</th><th>结果</th><th>详情</th></tr></thead>
+              <tbody id="doctor-body"><tr><td colspan="3" class="muted">尚未自检</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="modal-root"></div>
+  <div id="toast-root" class="toast-root"></div>
+  <script src="app.js"></script>
+</body>
+</html>

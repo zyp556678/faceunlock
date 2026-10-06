@@ -1,0 +1,32 @@
+#!/bin/sh
+# faceunlock-full postinst
+set -e
+
+# 人脸模板库：root 0700（只存 128 维特征，不存原图）
+if [ ! -d /var/lib/faceunlock ]; then
+    install -d -m 0700 -o root -g root /var/lib/faceunlock || true
+fi
+chmod 0700 /var/lib/faceunlock 2>/dev/null || true
+
+# 注册 PAM profile。profile 里是 Default: no，
+# 所以装包本身**不会**改变任何人的登录方式。
+if command -v pam-auth-update >/dev/null 2>&1; then
+    pam-auth-update --package >/dev/null 2>&1 || true
+fi
+
+# 若这次安装是"本系列另一个包被替换掉"（拆分包 <-> 完整包 互切），
+# 恢复原来的人脸启用状态。标记文件放在 /run（tmpfs）里：
+# 只在本次开机/本次事务内有意义，重启即失效，不会留下陈旧状态把
+# 用户已经关掉的人脸认证又偷偷打开。
+if [ -f /run/faceunlock-pam-was-enabled ]; then
+    rm -f /run/faceunlock-pam-was-enabled
+    # 用命令名而不是绝对路径：lintian 的 command-with-path-in-maintainer-script
+    if command -v faceunlock >/dev/null 2>&1 && \
+       ! grep -q 'pam_faceunlock\.so' /etc/pam.d/common-auth 2>/dev/null; then
+        faceunlock enable --robust >/dev/null 2>&1 || true
+    fi
+fi
+
+#DEBHELPER#
+
+exit 0

@@ -1,0 +1,54 @@
+.TH FACEUNLOCK-GUI 1 "2026-10-06" "faceunlock 0.1.0" "User Commands"
+.ad l
+.SH NAME
+faceunlock-gui \- faceunlock 的图形管理界面
+.SH SYNOPSIS
+.B faceunlock-gui
+.RI [ \-\-tab " faces|verify|settings" ]
+.SH DESCRIPTION
+.B faceunlock-gui
+是 faceunlock 的桌面管理窗口（Tauri + WebKitGTK）。它本身以**普通用户身份**运行，
+不持有 root 权限；所有涉及人脸模板库
+.RI ( /var/lib/faceunlock
+，权限为 root:root 0700) 的读写，都通过
+.BR pkexec (1)
+拉起
+.I /usr/libexec/faceunlock-admin
+完成，授权策略由 polkit 动作
+.B org.faceunlock.manage
+控制（默认 auth_admin_keep，即授权后 5 分钟内不再询问）。
+.PP
+界面分三页：
+.TP
+.B 人脸管理
+按用户查看、新增、重命名、删除人脸；新增时显示实时预览、检测框、
+采集进度与姿态提示。
+.TP
+.B 识别测试
+实时画面 + 相似度分数条 + 阈值参考线，用于直观判断阈值是否合适。
+.TP
+.B 设置
+总开关；场景开关（登录+锁屏 / sudo / su / pkexec）；阈值滑块；
+一键停用（panic）；系统自检结果。
+.SH OPTIONS
+.TP
+.BI \-\-tab " faces|verify|settings"
+启动时直接打开指定标签页。
+.SH FILES
+.TP
+.I /var/lib/faceunlock
+人脸模板库（root 0700）。只存 128 维特征向量与可选缩略图。
+.TP
+.I /etc/faceunlock/config.json
+全局配置。
+.TP
+.I /usr/libexec/faceunlock-gui-bridge
+本地 HTTP 网桥，监听 127.0.0.1 随机端口，用一次性 token 保护；
+每个请求都要带
+.I X-FaceUnlock-Token
+头，且校验 Host 头（防 DNS rebinding）。
+.SH SEE ALSO
+.BR faceunlock (8),
+.BR pkexec (1)
+.SH AUTHOR
+faceunlock maintainers

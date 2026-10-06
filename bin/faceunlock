@@ -1,0 +1,18 @@
+#!/usr/bin/python3
+"""faceunlock 命令行入口。"""
+from __future__ import annotations
+
+import os
+import sys
+
+_BASE = os.environ.get("FACEUNLOCK_BASE", "/usr/lib/faceunlock")
+if not os.path.isdir(os.path.join(_BASE, "faceunlock")):
+    _BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+for _p in (os.path.join(_BASE, "vendor"), _BASE):
+    if os.path.isdir(_p) and _p not in sys.path:
+        sys.path.insert(0, _p)
+
+from faceunlock.cli import main  # noqa: E402
+
+if __name__ == "__main__":
+    raise SystemExit(main())

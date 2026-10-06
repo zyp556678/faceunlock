@@ -1,0 +1,28 @@
+#!/bin/sh
+# faceunlock-full prerm
+#
+# 关键安全动作：必须在 pam_faceunlock.so 被删除**之前**把我们的行从 PAM 栈里移除。
+# 否则会出现 "common-auth 引用了一个已不存在的模块" —— 那会让所有认证失败，
+# 包括密码登录，等于把用户锁在系统外。
+set -e
+
+# 先记录"移除前人脸是否为启用状态"，供接替本包的新包 postinst 恢复。
+# /run 是 tmpfs，重启即失效，不会产生跨重启的陈旧状态。
+if [ -f /etc/pam.d/common-auth ] && \
+   grep -q 'pam_faceunlock\.so' /etc/pam.d/common-auth 2>/dev/null; then
+    : > /run/faceunlock-pam-was-enabled 2>/dev/null || true
+fi
+
+if command -v pam-auth-update >/dev/null 2>&1; then
+    pam-auth-update --package --remove faceunlock >/dev/null 2>&1 || true
+fi
+
+# 兜底：万一 pam-auth-update 没清干净，直接删掉引用行。
+# 用 GNU sed -i（写临时文件后 rename，是原子的），不引入 bash 专有语法。
+if [ -f /etc/pam.d/common-auth ] && grep -q 'pam_faceunlock\.so' /etc/pam.d/common-auth 2>/dev/null; then
+    sed -i '/pam_faceunlock\.so/d' /etc/pam.d/common-auth || true
+fi
+
+#DEBHELPER#
+
+exit 0

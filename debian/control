@@ -1,0 +1,82 @@
+Source: faceunlock
+Section: admin
+Priority: optional
+Maintainer: faceunlock maintainers <faceunlock@example.com>
+Build-Depends: debhelper-compat (= 13), libpam0g-dev, gcc
+Standards-Version: 4.6.2
+Homepage: https://localhost/faceunlock
+
+Package: faceunlock
+Architecture: amd64
+Depends: ${misc:Depends},
+         python3 (>= 3.10),
+         python3-numpy,
+         libc6,
+         libgcc-s1,
+         libstdc++6,
+         zlib1g,
+         libpam0g,
+         libpam-runtime,
+         pkexec | policykit-1
+Description: face recognition login for Linux (PAM module + management CLI)
+ faceunlock uses YuNet (detection) and SFace (128-d embedding) on a plain RGB
+ webcam, and wires the result into PAM so that it covers the GDM login screen,
+ the GNOME lock screen, sudo, su and pkexec/polkit prompts.
+ .
+ 人脸识别登录（PAM 模块 + 命令行管理工具）。
+ .
+ Security stance: this is a CONVENIENCE factor, not a replacement for your
+ password. Any failure - no face, no camera, camera busy, timeout, remote
+ session, tampered template, unexpected exception - falls back to the password
+ prompt and never locks you out. A plain RGB camera cannot defeat a photo or
+ screen replay attack, so do not rely on it alone for high-value targets.
+ .
+ 安全定位：便捷因子。任何失败都会回退密码，绝不锁死系统；纯 RGB 摄像头
+ 无法防照片翻拍。
+
+Package: faceunlock-gui
+Architecture: amd64
+Depends: ${misc:Depends},
+         ${shlibs:Depends},
+         faceunlock (= ${binary:Version})
+Description: graphical manager for faceunlock (Tauri + WebKitGTK)
+ 人脸识别管理界面。
+ .
+ 提供：人脸的新增 / 重命名 / 删除；摄像头实时预览与检测框；识别测试
+ （可视化相似度分数与阈值参考线）；阈值与场景开关（登录+锁屏 / sudo /
+ su / pkexec）；一键停用（panic）。
+ .
+ 特权操作通过 pkexec 调用 org.faceunlock.manage 这个 polkit 动作，
+ 界面本身以普通用户身份运行，不持有 root 权限。
+
+Package: faceunlock-full
+Architecture: amd64
+Depends: ${misc:Depends},
+         ${shlibs:Depends},
+         python3 (>= 3.10),
+         python3-numpy,
+         libc6,
+         libgcc-s1,
+         libstdc++6,
+         zlib1g,
+         libpam0g,
+         libpam-runtime,
+         pkexec | policykit-1
+Conflicts: faceunlock, faceunlock-gui
+Replaces: faceunlock, faceunlock-gui
+Provides: faceunlock (= ${binary:Version}), faceunlock-gui (= ${binary:Version})
+Description: face recognition login for Linux - complete bundle (核心 + 图形界面)
+ 自包含完整包：一个 .deb 装完全部内容，不需要再单独装 faceunlock 与
+ faceunlock-gui。
+ .
+ 包含：PAM 模块 pam_faceunlock.so、root 认证助手、命令行工具、
+ YuNet+SFace ONNX 模型、随包分发的 OpenCV 4.11、Tauri 图形管理界面、
+ polkit 授权动作、pam-configs 配置档与 man page。
+ .
+ 与拆分包的关系：本包 Conflicts/Replaces/Provides faceunlock 与
+ faceunlock-gui，因此**同一时刻只能装其中一套**。从拆分包切到本包时，
+ 安装脚本会自动记住"原本人脸是否为启用状态"并在切换后恢复
+ （标记放在 /run 里，重启即失效，不会留下陈旧状态）。
+ .
+ 安全定位与拆分包一致：便捷因子，任何失败都回退密码，绝不锁死系统；
+ 纯 RGB 摄像头无法防照片翻拍。

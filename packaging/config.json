@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "enabled": true,
+  "threshold": 0.4,
+  "timeout_ms": 4000,
+  "no_face_timeout_ms": 1000,
+  "required_frames": 2,
+  "window_frames": 3,
+  "services": {
+    "gdm-password": true,
+    "sudo": true,
+    "sudo-i": true,
+    "su": true,
+    "polkit-1": true,
+    "login": false
+  },
+  "rate_limit": {
+    "max_failures": 5,
+    "window_s": 300,
+    "cooldown_s": 120
+  },
+  "camera": {
+    "device": 0,
+    "width": 1280,
+    "height": 720,
+    "warmup_frames": 4
+  },
+  "save_thumbnails": true,
+  "debug": false
+}

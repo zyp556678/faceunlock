@@ -1,0 +1,14 @@
+#!/bin/sh
+# faceunlock-full postrm
+set -e
+
+if [ "$1" = "purge" ]; then
+    # 仅在 purge 时删除生物特征数据。remove 时保留，
+    # 这样重装/升级/在拆分包与完整包之间切换都不会丢失已录入的人脸。
+    rm -rf /var/lib/faceunlock
+    rm -rf /etc/faceunlock
+fi
+
+#DEBHELPER#
+
+exit 0

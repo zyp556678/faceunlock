@@ -1,0 +1,26 @@
+#!/usr/bin/python3
+"""faceunlock 管理界面后端启动器 —— 由 Tauri 外壳以**普通用户**身份拉起。
+
+职责：定位仓库/安装根目录，把 `vendor/`（随包分发的 opencv）与根目录塞进
+sys.path，然后交给 `faceunlock.gui_bridge.main()`。所有参数原样透传。
+
+注意：stdout 只用于打印一行握手 JSON（见 docs/GUI_API.md §1），
+其余日志一律走 stderr。
+"""
+from __future__ import annotations
+
+import os
+import sys
+
+_BASE = os.environ.get("FACEUNLOCK_BASE", "/usr/lib/faceunlock")
+if not os.path.isdir(os.path.join(_BASE, "faceunlock")):
+    # 开发态：本脚本位于 <repo>/bin/
+    _BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+for _p in (os.path.join(_BASE, "vendor"), _BASE):
+    if os.path.isdir(_p) and _p not in sys.path:
+        sys.path.insert(0, _p)
+
+from faceunlock.gui_bridge import main  # noqa: E402
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

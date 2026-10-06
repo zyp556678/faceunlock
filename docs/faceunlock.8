@@ -1,0 +1,95 @@
+.TH FACEUNLOCK 8 "2026-10-06" "faceunlock 0.1.0" "System Administration"
+.ad l
+.SH NAME
+faceunlock \- 基于人脸识别的 Linux 登录认证（PAM 模块与管理工具）
+.SH SYNOPSIS
+.B faceunlock
+.I 子命令
+.RI [ 参数 ]
+.SH DESCRIPTION
+.B faceunlock
+使用 YuNet（人脸检测）与 SFace（128 维特征）在普通 RGB 摄像头上做人脸识别，
+并通过 PAM 接入系统认证。启用后覆盖：
+GDM 登录界面、GNOME 锁屏、\fBsudo\fR、\fBsu\fR 与 \fBpkexec\fR（polkit）管理员弹窗。
+.PP
+.B 安全定位：这是便捷因子，不是密码的替代品。
+任何失败情形（未检测到人脸、摄像头被占用、超时、远程会话、模板校验失败、
+内部异常）都会回退到密码提示，不会把用户锁在系统之外。
+纯 RGB 摄像头无法抵御照片或屏幕翻拍攻击。
+.SH SUBCOMMANDS
+.TP
+.B doctor
+系统自检：摄像头、模型、模板库、PAM 状态、配置。
+.TP
+.B status
+显示总开关、阈值、已录入用户与各场景开关。
+.TP
+.B users
+列出系统用户（uid >= 1000）及其人脸录入数量。
+.TP
+.BI list " 用户"
+列出指定用户已录入的人脸及其 id。
+.TP
+.BI enroll " 用户 " [--label 标签] [--samples N]
+从摄像头采集 N 个合格样本并录入（需要 root）。
+.TP
+.BI rename " 用户 --id ID --label 新标签"
+重命名（需要 root）。
+.TP
+.BI delete " 用户 " ID
+删除单张人脸；id 传
+.B all
+表示清空（需要 root）。
+.TP
+.BI test " 用户"
+执行一次真实的识别测试并打印相似度分数。
+.TP
+.B enable
+把人脸认证加入 PAM 栈（需要 root）。
+.TP
+.B disable
+从 PAM 栈移除人脸认证（需要 root）。
+.TP
+.B panic
+一键还原：从 PAM 栈移除并关闭总开关（需要 root）。
+.TP
+.BI threshold " [数值]"
+查看或设置相似度阈值（0.20\-0.90，需要 root）。
+.TP
+.BI service " 名称 " [on|off]
+单独开关某个场景（gdm-password / sudo / sudo-i / su / polkit-1 / login）。
+.SH FILES
+.TP
+.I /etc/faceunlock/config.json
+全局配置（root 可写）：阈值、超时、场景开关、限速参数。
+.TP
+.I /var/lib/faceunlock/
+人脸模板库（root 0700）。只保存 128 维特征向量与可选缩略图，模板带 HMAC 签名。
+.TP
+.I /usr/libexec/faceunlock-auth
+PAM 认证助手，由 pam_faceunlock.so 以 root 身份 fork/exec。
+.TP
+.I /usr/libexec/faceunlock-admin
+特权管理助手，由图形界面通过 pkexec 拉起，使用 JSON-Lines 协议。
+.TP
+.I /etc/pam.d/common-auth
+启用后被插入一行
+.B "auth sufficient pam_faceunlock.so" 。
+.TP
+.I /var/backups/faceunlock/
+每次修改 PAM 配置前对 common-auth 的自动备份。
+.SH EXIT STATUS
+认证助手的退出码约定：
+.B 0
+匹配成功；
+.B 1
+明确不匹配；
+.B 2
+不适用（回退密码）。
+.SH SEE ALSO
+.BR pam (8),
+.BR pam.conf (5),
+.BR pam-auth-update (8),
+.BR pkexec (1)
+.SH AUTHOR
+faceunlock maintainers

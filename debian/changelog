@@ -1,0 +1,12 @@
+faceunlock (0.1.0) noble; urgency=medium
+
+  * Initial release.
+  * PAM module pam_faceunlock.so with hard timeout and fail-open semantics.
+  * YuNet 2023mar + SFace 2021dec, OpenCV 4.11 vendored under
+    /usr/lib/faceunlock/vendor (noble's OpenCV 4.6 cannot run the v2 model).
+  * CLI: doctor / status / users / list / enroll / rename / delete / test /
+    enable / disable / panic / threshold / service.
+  * polkit-gated privileged helper faceunlock-admin (JSON-Lines).
+
+ -- faceunlock maintainers <faceunlock@example.com>  Tue, 06 Oct 2026 17:26:35 +0800
+

@@ -1,0 +1,39 @@
+# ---------------- 构建产物 ----------------
+*.so
+*.o
+*.pyc
+__pycache__/
+gui/src-tauri/target/
+gui/src-tauri/gen/
+gui/node_modules/
+gui/dist/
+*.deb
+*.buildinfo
+*.changes
+
+# debian 打包的中间产物（debian/rules 与 debian/control 等留版本控制）
+debian/.debhelper/
+debian/files
+debian/*.substvars
+debian/*.debhelper.log
+debian/debhelper-build-stamp
+debian/faceunlock/
+debian/faceunlock-gui/
+debian/faceunlock-full/
+
+# ---------------- 测试输出（含真实人脸图像，绝不入库） ----------------
+test_output/
+
+# ---------------- 大体积运行时依赖：见 README「获取依赖」 ----------------
+# 随包分发的 OpenCV 4.11（manylinux wheel 解包结果，127 MB）
+vendor/
+# 上游 wheel 缓存（65 MB）
+vendor-wheels/
+# YuNet + SFace ONNX 模型（38 MB，MIT / Apache-2.0）
+models/*.onnx
+
+# ---------------- 编辑器 / 系统 ----------------
+.vscode/
+.idea/
+*.swp
+.DS_Store

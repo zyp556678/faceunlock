@@ -1,0 +1,14 @@
+{
+  "name": "faceunlock-gui",
+  "private": true,
+  "version": "0.1.0",
+  "description": "faceunlock 管理界面（Tauri v2 外壳 + 纯静态前端，无打包器）",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}

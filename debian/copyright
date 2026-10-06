@@ -1,0 +1,50 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: faceunlock
+Source: locally developed for this machine
+
+Files: *
+Copyright: 2026 faceunlock maintainers
+License: MIT
+
+Files: models/face_detection_yunet_2023mar.onnx
+Copyright: 2021-2023 Wei Wu, Hanyang Peng, Shiqi Yu et al.
+License: MIT
+Comment: YuNet face detector, from the OpenCV Model Zoo (opencv_zoo).
+ https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet
+
+Files: models/face_recognition_sface_2021dec.onnx
+Copyright: OpenCV team / Yaoyao Zhong et al.
+License: Apache-2.0
+Comment: SFace face recognizer (MobileFaceNet + SFace loss), OpenCV Model Zoo.
+ https://github.com/opencv/opencv_zoo/tree/main/models/face_recognition_sface
+
+Files: vendor/*
+Copyright: 2000-2025 The OpenCV Foundation, the NumPy developers
+License: Apache-2.0
+Comment: Unpacked manylinux wheels of opencv-python-headless 4.11.0.86 and
+ their bundled private shared libraries. Vendored because Ubuntu 24.04's
+ OpenCV 4.6 cannot run the YuNet 2023mar (v2) model, and because PyPI is
+ not reachable from the target machine at build time.
+
+License: MIT
+ Permission is hereby granted, free of charge, to any person obtaining a
+ copy of this software and associated documentation files (the "Software"),
+ to deal in the Software without restriction, including without limitation
+ the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ and/or sell copies of the Software, and to permit persons to whom the
+ Software is furnished to do so, subject to the following conditions:
+ .
+ The above copyright notice and this permission notice shall be included in
+ all copies or substantial portions of the Software.
+ .
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+ THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+ DEALINGS IN THE SOFTWARE.
+
+License: Apache-2.0
+ On Debian systems the complete text of the Apache License 2.0 can be found
+ in /usr/share/common-licenses/Apache-2.0.

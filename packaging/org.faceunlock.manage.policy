@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+
+  <vendor>faceunlock</vendor>
+  <vendor_url>https://localhost/faceunlock</vendor_url>
+
+  <!--
+    pkexec /usr/libexec/faceunlock-admin 会匹配这条 action（靠 exec.path 注解），
+    因此弹窗文案由我们控制，而不是通用的 “Authentication is required”。
+
+    auth_admin_keep: 首次授权后 5 分钟内不再重复询问，避免管理界面反复弹框。
+    真正的权限边界在 faceunlock/admin.py 里（只有 sudo 组能管理他人的人脸）。
+  -->
+  <action id="org.faceunlock.manage">
+    <description>管理人脸识别数据</description>
+    <message>需要管理员授权才能修改人脸识别模板</message>
+    <icon_name>preferences-desktop-user</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/libexec/faceunlock-admin</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+
+</policyconfig>
