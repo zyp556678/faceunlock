@@ -1,3 +1,22 @@
+faceunlock (0.1.1) noble; urgency=medium
+
+  * Fix a dangerous false alarm in the read-only commands. The template store
+    is root-only (/var/lib/faceunlock, 0700), so a normal user running
+    `faceunlock status` / `doctor` hit an uncaught PermissionError, while
+    `users` / `list` reported the template as "corrupted / tampered with" —
+    which made a real tampering report indistinguishable from "you are not
+    root".
+  * store.py: add StoreUnreadable, raised for PermissionError in load() and
+    users(). It deliberately subclasses StoreTampered so every existing
+    `except StoreTampered` branch on the authentication path keeps catching
+    it, preserving fail-open-to-password semantics. No relaxation.
+  * admin.py: report unreadable templates as -2, distinct from -1 (corrupt).
+  * cli.py: status / doctor / users / list now say "needs root" and point at
+    the privileged path instead of claiming tampering.
+  * No change to the PAM stack, the PAM module, or auth.py.
+
+ -- faceunlock maintainers <faceunlock@example.com>  Tue, 07 Oct 2026 12:10:00 +0800
+
 faceunlock (0.1.0) noble; urgency=medium
 
   * Initial release.
