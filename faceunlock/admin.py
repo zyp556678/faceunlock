@@ -26,7 +26,7 @@ from typing import Any
 from . import CONFIG_FILE, STORE_DIR, __version__
 from . import config as config_mod
 from . import pamctl
-from .store import StoreError, StoreTampered, TemplateStore, valid_username
+from .store import StoreError, StoreTampered, StoreUnreadable, TemplateStore, valid_username
 
 ADMIN_GROUPS = {"sudo", "admin", "wheel", "root"}
 MIN_UID = 1000
@@ -97,6 +97,8 @@ def system_users() -> list[dict[str, Any]]:
             continue
         try:
             n = len(store.faces(pw.pw_name, with_thumb=False))
+        except StoreUnreadable:
+            n = -2          # 非 root 读不到模板库，与"模板损坏"(-1)区分开
         except StoreTampered:
             n = -1
         out.append({"user": pw.pw_name, "uid": pw.pw_uid, "face_count": n})

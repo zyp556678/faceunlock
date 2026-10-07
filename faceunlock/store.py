@@ -33,6 +33,19 @@ class StoreTampered(StoreError):
     """模板 HMAC 校验失败。"""
 
 
+class StoreUnreadable(StoreTampered):
+    """读不到模板库——通常是权限不足（非 root），**不是**篡改或损坏。
+
+    故意继承 StoreTampered：认证路径上所有既有的 `except StoreTampered`
+    分支都会原样接住它，新增异常类型不会在 PAM 栈里变成漏网异常；失败
+    语义也一致（不适用 -> PAM_IGNORE -> 回退密码），安全上不作任何放松。
+
+    展示层（cli / admin）必须**优先**匹配 StoreUnreadable，否则会把
+    "你不是 root" 说成 "模板被篡改"——安全模块里这种误报很危险：
+    真被篡改时反而分不出来。
+    """
+
+
 def _atomic_write(path: str, data: bytes, mode: int = 0o600) -> None:
     d = os.path.dirname(path)
     os.makedirs(d, exist_ok=True)
@@ -124,6 +137,10 @@ class TemplateStore:
                 data = json.load(fh)
         except FileNotFoundError:
             return None
+        except PermissionError as e:
+            # 先于 OSError 捕获：权限不足不是"文件损坏"，必须区分开
+            raise StoreUnreadable(
+                f"权限不足，读不到模板库（{self.tpl_dir}，需要 root）") from e
         except (json.JSONDecodeError, OSError) as e:
             raise StoreTampered(f"模板文件损坏: {e}") from e
         sig = data.pop("hmac", None)
@@ -150,6 +167,9 @@ class TemplateStore:
             return sorted(f[:-5] for f in os.listdir(self.tpl_dir) if f.endswith(".json"))
         except FileNotFoundError:
             return []
+        except PermissionError as e:
+            raise StoreUnreadable(
+                f"权限不足，列不出模板库（{self.tpl_dir}，需要 root）") from e
 
     def exists(self, user: str) -> bool:
         try:

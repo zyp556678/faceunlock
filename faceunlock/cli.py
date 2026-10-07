@@ -16,7 +16,7 @@ from . import config as config_mod
 from . import pamctl
 from .camera import Camera, CameraBusy
 from .engine import FaceEngine
-from .store import StoreTampered, TemplateStore
+from .store import StoreTampered, StoreUnreadable, TemplateStore
 
 # 录入质量门限——这几个数字是**在本机实测标定**出来的，不要凭直觉改：
 #   * 本机摄像头（Luxvisions 30c9:008c）在出厂 ISP 参数下，
@@ -54,7 +54,10 @@ def _need_root() -> None:
 
 def cmd_doctor(args: argparse.Namespace) -> int:
     from .admin import cmd_doctor
-    res = cmd_doctor({})
+    try:
+        res = cmd_doctor({})
+    except StoreUnreadable as e:
+        sys.exit(f"{e}\n请用 root 运行：sudo faceunlock doctor（或打开图形界面 faceunlock-gui）")
     icon = {"ok": "✅", "warn": "⚠️ ", "fail": "❌"}
     print(f"faceunlock {__version__} 自检\n")
     for c in res["checks"]:
@@ -69,6 +72,12 @@ def cmd_status(args: argparse.Namespace) -> int:
     cfg = config_mod.load()
     st = pamctl.status()
     store = TemplateStore()
+    try:
+        users = {u: len(store.faces(u, with_thumb=False)) for u in store.users()}
+        users_err = ""
+    except StoreUnreadable as e:
+        # 只读命令不该因为"不是 root"而崩；如实说明并指向特权路径
+        users, users_err = {}, str(e)
     info = {
         "version": __version__,
         "store": store.root,
@@ -77,7 +86,8 @@ def cmd_status(args: argparse.Namespace) -> int:
         "threshold": cfg["threshold"],
         "services": cfg["services"],
         "pam": st,
-        "users": {u: len(store.faces(u, with_thumb=False)) for u in store.users()},
+        "users": users,
+        "users_error": users_err or None,
     }
     if args.json:
         print(json.dumps(info, ensure_ascii=False, indent=2))
@@ -90,7 +100,10 @@ def cmd_status(args: argparse.Namespace) -> int:
     print("  已录入用户 :")
     for u, n in (info["users"] or {}).items():
         print(f"      {u}: {n} 张人脸")
-    if not info["users"]:
+    if users_err:
+        print(f"      （本用户查不到：{users_err}）")
+        print("      （用 sudo faceunlock status 或 faceunlock-gui 查看）")
+    elif not info["users"]:
         print("      （无）")
     print("  场景开关   :")
     for s, v in info["services"].items():
@@ -105,9 +118,15 @@ def cmd_users(args: argparse.Namespace) -> int:
         print(json.dumps(users, ensure_ascii=False, indent=2))
         return 0
     for u in users:
-        mark = f"{u['face_count']} 张人脸" if u["face_count"] else "未录入"
-        if u["face_count"] == -1:
+        n = u["face_count"]
+        if n == -2:
+            mark = "🔒 读不到模板库（需要 root）"
+        elif n == -1:
             mark = "⚠️ 模板损坏"
+        elif n > 0:
+            mark = f"{n} 张人脸"
+        else:
+            mark = "未录入"
         print(f"  {u['user']:20s} uid={u['uid']:<6d} {mark}")
     return 0
 
@@ -116,6 +135,8 @@ def cmd_list(args: argparse.Namespace) -> int:
     store = TemplateStore()
     try:
         faces = store.faces(args.user, with_thumb=False)
+    except StoreUnreadable as e:
+        sys.exit(f"{e}\n请用 sudo faceunlock list {args.user}，或打开 faceunlock-gui")
     except StoreTampered as e:
         sys.exit(f"模板损坏或被篡改: {e}")
     if args.json:
