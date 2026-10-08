@@ -1,4 +1,4 @@
-.TH FACEUNLOCK 8 "2026-10-06" "faceunlock 0.1.0" "System Administration"
+.TH FACEUNLOCK 8 "2026-10-08" "faceunlock 0.1.2" "System Administration"
 .ad l
 .SH NAME
 faceunlock \- 基于人脸识别的 Linux 登录认证（PAM 模块与管理工具）
@@ -51,13 +51,24 @@ GDM 登录界面、GNOME 锁屏、\fBsudo\fR、\fBsu\fR 与 \fBpkexec\fR（polki
 从 PAM 栈移除人脸认证（需要 root）。
 .TP
 .B panic
-一键还原：从 PAM 栈移除并关闭总开关（需要 root）。
+一键还原：从 PAM 栈移除、关闭总开关，并收回 polkit 授权框的摄像头例外（需要 root）。
 .TP
 .BI threshold " [数值]"
 查看或设置相似度阈值（0.20\-0.90，需要 root）。
 .TP
 .BI service " 名称 " [on|off]
 单独开关某个场景（gdm-password / sudo / sudo-i / su / polkit-1 / login）。
+.TP
+.BI polkit-camera " [on|off|status]"
+查看或开关 polkit 授权框（pkexec）的摄像头权限。Ubuntu 26.04（polkit 127）把
+polkit\-1 的 PAM 栈放进
+.B PrivateDevices=yes
+的 systemd 沙箱，里面没有 /dev/video*，人脸认证必然打不开摄像头；随包安装的
+drop\-in（见 FILES）只放开视频设备这一类字符设备，其余沙箱限制不变。
+.B off
+会删除该 drop\-in 并
+.BR "systemctl daemon-reload" ，
+把 polkit 恢复成上游强沙箱（授权框只认密码）。改状态需要 root。
 .SH FILES
 .TP
 .I /etc/faceunlock/config.json
@@ -75,6 +86,14 @@ PAM 认证助手，由 pam_faceunlock.so 以 root 身份 fork/exec。
 .I /etc/pam.d/common-auth
 启用后被插入一行
 .B "auth sufficient pam_faceunlock.so" 。
+.TP
+.I /etc/systemd/system/polkit-agent-helper@.service.d/10-faceunlock-camera.conf
+Ubuntu 26.04（polkit 127）下放开 polkit 授权框摄像头权限的 systemd drop\-in
+（两行：PrivateDevices=no 与 DeviceAllow=char-video4linux rw）。
+.B "faceunlock polkit-camera off"
+会删除它；
+.B panic
+也会一并收回。
 .TP
 .I /var/backups/faceunlock/
 每次修改 PAM 配置前对 common-auth 的自动备份。

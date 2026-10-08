@@ -2,12 +2,12 @@
 
 > 给 Ubuntu / GNOME 加一套**人脸识别登录**：开机登录界面、锁屏、`sudo`、`su`、`pkexec` 授权框，全部覆盖。
 >
-> 一个 PAM 模块 + 一个特权助手 + 一个 Tauri 管理界面 + 一套 31 项验收测试。
+> 一个 PAM 模块 + 一个特权助手 + 一个 Tauri 管理界面 + 一套 40+ 项验收测试。
 
 [![Platform](https://img.shields.io/badge/platform-Ubuntu%2024.04%20%7C%20GNOME%2046%20Wayland-informational)](#已验证环境)
 [![PAM](https://img.shields.io/badge/integration-PAM%20(gdm%20%2F%20sudo%20%2F%20su%20%2F%20polkit)-blueviolet)](#它覆盖哪些场景)
 [![Engine](https://img.shields.io/badge/engine-YuNet%20%2B%20SFace%20(OpenCV%204.11)-blue)](#它是怎么工作的)
-[![Tests](https://img.shields.io/badge/acceptance-31%20passed%20%2F%200%20failed-brightgreen)](#验收与实测结果)
+[![Tests](https://img.shields.io/badge/acceptance-40%2B%20checks-brightgreen)](#验收与实测结果)
 [![License](https://img.shields.io/badge/license-MIT%20%2B%20Apache--2.0-green)](#许可证)
 
 **语言**：中文（英文版欢迎 PR，见 [参与贡献](#参与贡献)）
@@ -52,7 +52,7 @@
 | GNOME 锁屏解锁 | `gdm-password` | 同一个服务，gnome-shell 通过 GDM D-Bus 走这条栈 |
 | `sudo` / `sudo -i` | `sudo` / `sudo-i` | 终端里执行时先找人脸，失败才提示 `Password:` |
 | `su` | `su` | 同上 |
-| 图形界面管理员弹窗 | `polkit-1` | `pkexec`、软件中心装包等触发的授权框 |
+| 图形界面管理员弹窗 | `polkit-1` | `pkexec`、软件中心装包等触发的授权框。Ubuntu 26.04 的 polkit 127 会把它关进沙箱，随包 drop-in 负责放开摄像头；不需要可关（见下文「Ubuntu 26.04 / polkit 127」） |
 | 控制台 TTY | `login` | 默认**关闭**（可在配置里打开） |
 
 管理界面（Tauri 桌面窗口）可以：查看 / 新增 / 重命名 / 删除人脸、实时预览并显示检测框、
@@ -71,6 +71,9 @@ make            # 等价于 gcc -shared -fPIC -O2 -Wall -Wextra -o pam/pam_faceu
 
 # 3) 打 deb（需要 build-essential / debhelper / libpam0g-dev）
 dpkg-buildpackage -b -us -uc
+#    没有 debhelper / libpam0g-dev 的环境（例如本机没有免密 sudo，装不了构建依赖）
+#    可以走手工装配路径，产物同样是可用 dpkg -i / apt install 安装的包：
+tools/build-deb-offline.sh
 
 # 4) 安装（图省事装完整包）
 sudo apt install ../faceunlock-full_0.1.0_amd64.deb
@@ -274,6 +277,11 @@ gdm-session-worker (root, 服务名 gdm-password)
 6. 管理界面里「点添加人脸 → 采满 → 自动提交」这条**鼠标交互链**没有做自动化点击验证
    （底层 API、真人截图、真实余弦都已验证）。
 
+7. **pkexec 授权框的人脸能力，是用"放松一点 polkit 沙箱"换来的**（只多给"摄像头"这一项）。
+   0.1.2 起随包写入的 drop-in 会关掉 polkit helper 的 `PrivateDevices` 并只放行视频设备；
+   不愿意接受这个取舍就 `sudo faceunlock polkit-camera off`——登录界面、锁屏、`sudo`、
+   `su` 的人脸完全不受影响，只有授权框退回纯密码。
+
 ---
 
 ## 排障与恢复
@@ -308,14 +316,18 @@ sudo faceunlock panic
 | `sudo` 里没弹人脸 | sudo 默认 15 分钟内免密缓存，属正常；或 `sudo faceunlock service sudo on` |
 | 登录界面没弹人脸 | 确认 `sudo faceunlock enable` 已执行、`grep pam_faceunlock /etc/pam.d/common-auth` 有输出 |
 | 摄像头被 Zoom/Chrome 占了 | 会自动 0.3 秒内回退密码，不会卡住 |
+| 授权框（pkexec）里人脸没反应，密码框也等不来 | Ubuntu 26.04 的 polkit 127 沙箱所致。0.1.2 起会毫秒级回退密码；要看/改摄像头权限用 `faceunlock polkit-camera status` / `sudo faceunlock polkit-camera on` |
+| `faceunlock doctor` 的 `polkit` 一行是 warn | 授权框拿不到摄像头（沙箱挡的）。`sudo faceunlock polkit-camera on` 可修复；只想用密码就忽略 |
+| 授权框里输密码总在"重试"、根本输不完 | 0.1.1 及更早版本的老问题（助手 stderr 污染 polkit 协议流）。升级到 0.1.2 即可 |
 
 ---
 
 ## 验收与实测结果
 
 ```bash
-# 完整验收套件（31 项，含安全属性、失败回退、三条真实 PAM 栈、
-# 卸载安全性、锁屏架构回归）——发现任何异常都先跑这个
+# 完整验收套件（40+ 项，含安全属性、失败回退、三条真实 PAM 栈、
+# polkit 127 沙箱下的毫秒级回退（第 12 节）、drop-in 生效性（第 13 节）、
+# 助手 stderr 隔离（第 14 节）、卸载安全性、锁屏架构回归）——发现任何异常都先跑这个
 sudo tools/acceptance.sh
 
 # 真机锁屏解锁测试：会先确认「人在镜头前」才锁屏；
@@ -336,12 +348,24 @@ journal 证据: gdm-session-worker[46509]: 人脸识别通过：alice（相似�
 安全属性单元测试: 36 通过 / 0 失败
 ```
 
+**Ubuntu 26.04 / polkit 127 回归实测**（2026-10-08，复现手段见「技术选型与踩过的坑」）：
+
+```
+授权框沙箱等价环境（/dev 里没有 video*，真实 libpam 栈加载新模块）:
+    19 ms 返回 PAM_IGNORE，不发任何 PAM 消息、不 fork 助手，直接落到密码 ✅
+stderr 断管 A/B（复现 polkit 127 的协议通道）:
+    旧模块 0.1.1: pam_authenticate = 7（助手以 120 退出 → 视为不适用）❌
+    新模块 0.1.2: pam_authenticate = 0（子进程 stderr 已接 /dev/null）✅
+助手侧（免 root）: 正常路径 exit=2 / 快路径 27 ms / 非终端时 stderr 零字节 / stdout 零字节 ✅
+安全属性单元测试: 36 通过 / 0 失败（改动后复跑）
+```
+
 ### 已验证环境
 
 | 项 | 值 |
 |---|---|
-| 系统 | Ubuntu 24.04.5 LTS |
-| 桌面 | GNOME 46 / **Wayland** |
+| 系统 | Ubuntu 24.04.5 LTS（初版验证）**/** Ubuntu 26.04.1 LTS + polkit 127（2026-10-08 回归） |
+| 桌面 | GNOME 46 / **Wayland**（26.04 上为 GNOME 50） |
 | 显示管理器 | gdm3 |
 | 摄像头 | 纯 RGB UVC（Luxvisions `30c9:008c`），`/dev/video0` |
 | OpenCV | 4.11.0.86（随包分发，headless wheel） |
@@ -400,14 +424,100 @@ journal 证据: gdm-session-worker[46509]: 人脸识别通过：alice（相似�
    FAILURE
    ```
 
-   修法（两处，缺一不可）：
+   修法（三处，缺一不可）：
    - `pam_faceunlock.c` 在子进程里先 `dup2(/dev/null, STDOUT_FILENO)` 再 execv；
-   - `bin/faceunlock-auth` 的所有输出改走 **stderr**。
+   - `pam_faceunlock.c` 还要**判断 stderr 是不是终端**：是终端（sudo/su）就保留，
+     不是（polkit socket / GDM / journal）就一并接到 `/dev/null` —— 原因见下一节，
+     polkit 127 里 stderr 同样不是我们的通道；
+   - `bin/faceunlock-auth` 的输出先写 syslog，只有 stderr 是终端时才额外打一行。
 
-   stderr 保持原样：polkit 不用它做协议，而 sudo 场景下那行
-   「人脸识别通过（相似度 x.xx）」对用户是有用反馈。
    验收套件第 11 节专门守这条（助手 stdout 必须为空 + C 模块必须有重定向）。
-   推广开来的教训：**凡是被 PAM 模块 exec 的东西，都不能假设 stdout 属于自己**。
+   推广开来的教训：**凡是被 PAM 模块 exec 的东西，都不能假设 stdout / stderr
+   属于自己**——先问一句"这个 fd 现在是终端吗？"。
+
+### Ubuntu 26.04 / polkit 127：授权框里的摄像头，与"密码也输不进去"
+
+Ubuntu 26.04（polkit 127）换掉了提权实现：`polkit-1` 服务的 PAM 栈不再跑在普通
+setuid-root 进程里，而是跑在 systemd **socket 激活**的服务
+`polkit-agent-helper@.service` 里，默认带强沙箱：
+
+```ini
+PrivateDevices=yes          # 私有 /dev：里面根本没有 /dev/video*
+DevicePolicy=strict
+DeviceAllow=/dev/null rw    # 视频设备被设备 cgroup 拒绝
+ProtectSystem=strict
+ProtectHome=yes
+```
+
+后果有两个，都很致命：
+
+**1. 授权框里的人脸永远打不开摄像头。** 本机日志里 68 次 `polkit-1` 认证有 64 次是
+`code=2 reason=摄像头不可用（可能被占用）: 无法打开 /dev/video0`；而同一台机器上以用户
+身份打开同一台摄像头只要 **0.12 s** —— 硬件、驱动、uaccess ACL 全都正常。
+（对照 README 第 6 条：登录界面的 `gdm-session-worker` 是 root，不受这个沙箱影响。）
+
+**2. 连密码都来不及输。** 老版本里"助手往 stderr 写日志"是安全的（见上一条），
+这个前提在 polkit 127 上**不成立**：那里的 stderr 既写不通、又是协议流的一部分。
+实测证据（可在本机 journal 里复核）：
+
+* journal 里**看不到**助手那行「faceunlock: 未通过（…），已回退密码认证」
+  （sudo 场景看得到）；
+* 模块日志里有 27 次 `helper_exit=120` —— 把 stderr 接到写不通的管道，
+  CPython 正是以 **120** 退出（退出阶段刷不出标准流）；我们单独复现了这个退出码；
+* `polkitd` 反复报 `Request dismissed`，`polkit-agent-helper.socket` 的
+  `Accepted:` 计数涨到 81（≈每秒一次），而 `pam_unix` 只能拿到空密码/EOF：
+  `pam_unix(polkit-1:auth): conversation failed` +
+  `auth could not identify password for [...]`。
+
+机制：gnome-shell 解析到混进协议流的垃圾行 → 判失败 → **每秒重建一次授权框**
+→ 用户永远输不完密码。再叠加助手在打开摄像头**之前**要 `import cv2` + 加载 ONNX
+（本机实测 5~6.5 s CPU），撞上 C 模块 8 秒兜底 `alarm()` 就被 SIGKILL
+（36 次 `helper_exit=-1`），授权框看起来就是"卡死"。
+
+#### 0.1.2 起的行为
+
+| 层面 | 做法 |
+|---|---|
+| C 模块 | fork **之前**先看 `/dev` 有没有 `video*`（只 readdir，不 open 设备）。没有就毫秒级 `PAM_IGNORE`：**不发** `PAM_TEXT_INFO`、**不 fork**、不碰摄像头。可用模块参数 `video_probe=0` 关掉。 |
+| C 模块（子进程） | stdout 一律接 `/dev/null`；**stderr 只在它是终端时保留**（sudo/su 的"人脸识别通过（相似度 x.xx）"照旧），非终端（polkit socket / GDM / journal）一律丢弃。 |
+| `bin/faceunlock-auth` | 导入 OpenCV **之前**先做廉价预检（总开关 / 场景开关 / 设备节点），命中就毫秒级返回 2；输出先写 syslog，只有 stderr 是终端时才多打一行。 |
+| `faceunlock/preflight.py`（新增） | 只用 `os`/`glob` 判断"这台机器现在有没有摄像头设备节点"，并给出人话原因。 |
+| 打包 | 随包安装一个 systemd drop-in，放开 polkit helper 的**视频设备**权限（见下）。 |
+| CLI / GUI | `faceunlock polkit-camera [on｜off｜status]`；`faceunlock doctor` 多一行 `polkit` 状态；`faceunlock panic` 会连这个例外一起收回。 |
+
+实测：在"`/dev` 里没有 `video*`"的等价沙箱环境（LD_PRELOAD 伪造 `/dev`，
+真实 libpam 栈加载新模块）下，模块 **19 ms** 返回 `PAM_IGNORE`、不发任何 PAM 消息、
+不 fork 助手，直接落到密码；在"stderr 断管"的场景下，旧模块认证失败（助手 120 退出），
+新模块通过（子进程 stderr 已接到 `/dev/null`）。这两条已加入验收套件第 12~14 节。
+
+#### 让 pkexec / 图形授权框也能用人脸（默认已开，可关）
+
+drop-in 只有两行，装在
+`/etc/systemd/system/polkit-agent-helper@.service.d/10-faceunlock-camera.conf`：
+
+```ini
+[Service]
+PrivateDevices=no
+DeviceAllow=char-video4linux rw
+```
+
+它只放行**视频设备**这一类字符设备（设备名由 systemd 用 `/proc/devices` 解析成
+major 81，等价写法是 `char-81 rw`）。`DevicePolicy=strict` 仍然拒绝其它设备，
+`ProtectSystem` / `ProtectHome` / `PrivateTmp` / `PrivateNetwork` /
+`NoNewPrivileges` / `RestrictSUIDSGID` / `SystemCallFilter` 等加固一律不动。
+
+不想要这个能力（授权框只认密码）：
+
+```bash
+sudo faceunlock polkit-camera off     # 删掉 drop-in + systemctl daemon-reload
+sudo faceunlock polkit-camera status  # 看当前是否生效（含 PrivateDevices/DeviceAllow）
+```
+
+> **安全取舍**：这一步确实放松了 polkit 给自己 helper 的沙箱，但只多了"能碰摄像头"
+> 这一项。如果你宁愿保持上游沙箱原样，就 `polkit-camera off`：人脸在登录界面、
+> 锁屏、`sudo`、`su` 里照常可用，只有 pkexec 授权框退回纯密码。
+> 卸载本包时 `prerm` 会自动撤掉这个 drop-in 并 `daemon-reload`。
+
 
 ### 录入质量门限是怎么定的（踩过的坑）
 
@@ -472,6 +582,8 @@ sudo apt purge faceunlock-full   # 连 /var/lib/faceunlock 一起删掉
 
 `prerm` 会**在删除 `pam_faceunlock.so` 之前**先把 PAM 栈里的引用清掉——
 否则会出现「PAM 引用了一个不存在的模块」，把密码登录也一起弄坏。
+同时它会撤掉 polkit 的摄像头 drop-in（`/etc/systemd/system/polkit-agent-helper@.service.d/`）
+并 `systemctl daemon-reload`，不让"放宽过的沙箱"留在卸载后的系统上。
 
 ---
 
@@ -482,7 +594,7 @@ sudo apt purge faceunlock-full   # 连 /var/lib/faceunlock 一起删掉
 - **安全相关的改动请附上实测证据**（哪条 PAM 栈、什么退出码、journal 输出），
   这个项目的每条结论都是真机跑出来的；
 - 不要提交 `test_output/`、模板文件、`secret.key` 或任何含人脸的图像，见 [PRIVACY.md](PRIVACY.md)；
-- 改完请跑 `sudo tools/acceptance.sh`，31 项必须全绿。
+- 改完请跑 `sudo tools/acceptance.sh`，40+ 项必须全绿。
 
 ---
 

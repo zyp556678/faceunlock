@@ -22,7 +22,10 @@ PYFILES  = $(wildcard faceunlock/*.py) $(wildcard bin/*) $(wildcard tools/*.py)
 all: $(PAM_SO)
 
 $(PAM_SO): $(PAM_SRC)
-	$(CC) $(CPPFLAGS) $(CFLAGS) -shared -fPIC -o $@ $< -lpam
+	# 用 -l:libpam.so.0 而不是 -lpam：libpam.so 这个开发符号链接一旦缺失/悬空
+	# （例如只解包了 libpam0g-dev 的场景），链接器会静默回退到 libpam.a 静态链接，
+	# 让模块自带一份 pam_* 符号定义 —— 在 PAM 栈里是符号劫持。显式 soname 免疫。
+	$(CC) $(CPPFLAGS) $(CFLAGS) -shared -fPIC -o $@ $< -l:libpam.so.0
 	@echo "→ $@ 已构建"
 
 # ---------------- 验证 ----------------
@@ -43,6 +46,17 @@ check: $(PAM_SO)
 		echo "❌ $(PAM_SRC) 缺少 stdout 重定向（polkit 场景会死锁）"; exit 1; \
 	fi
 	@echo "→ stdout 不变量检查通过"
+	# 守护「模块必须动态依赖 libpam，且不得自带 pam_* 符号定义」：
+	# 静态链进 libpam.a 会在 PAM 栈里劫持 pam_get_user/pam_get_item 等符号。
+	@if command -v readelf >/dev/null 2>&1 && command -v nm >/dev/null 2>&1; then \
+		readelf -d $(PAM_SO) | grep -q 'libpam\.so\.0' || { \
+			echo "❌ $(PAM_SO) 没有动态依赖 libpam.so.0（静态链了 libpam.a？）"; exit 1; }; \
+		nm -D --defined-only $(PAM_SO) | grep -q ' T pam_get_user' && { \
+			echo "❌ $(PAM_SO) 自带 pam_get_user 定义（静态链了 libpam.a，会劫持符号）"; exit 1; }; \
+		echo "→ libpam 动态链接检查通过"; \
+	else \
+		echo "→ 跳过 libpam 链接检查（缺少 readelf/nm）"; \
+	fi
 	$(PY) tools/selftest.py
 
 # 无摄像头也能跑：用合成帧 + test_output/smoke_feats.npy

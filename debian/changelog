@@ -1,3 +1,36 @@
+faceunlock (0.1.2) resolute; urgency=medium
+
+  * Ubuntu 26.04 / polkit 127：修好提权场景下的两处故障。
+
+    polkit 127 把 polkit-1 服务的 PAM 栈放进 socket 激活的
+    polkit-agent-helper@.service，默认沙箱是 PrivateDevices=yes +
+    DevicePolicy=strict(+DeviceAllow=/dev/null rw)：里面根本没有
+    /dev/video*，而且 stderr 既写不通、又是与 gnome-shell 通信的协议流
+    的一部分。实测表现是"授权框里人脸打不开摄像头，密码也输不进去"
+    （journal: 64/68 次 `无法打开 /dev/video0`、27 次 helper_exit=120、
+    polkitd 反复 Request dismissed、pam_unix conversation failed）。
+
+  * pam_faceunlock.c：fork 之前先 readdir /dev 找 video* 设备，没有就毫秒级
+    PAM_IGNORE（不发 PAM_TEXT_INFO、不 fork、不碰摄像头；可用模块参数
+    video_probe=0 关闭）。子进程除了把 stdout 接到 /dev/null，现在还判断
+    stderr 是不是终端：是（sudo/su）保留反馈，不是（polkit socket / GDM /
+    journal）一并丢弃，杜绝协议流污染与 EPIPE。退出码 120 单独打日志。
+  * bin/faceunlock-auth + faceunlock/preflight.py（新增）：在 import OpenCV
+    之前做廉价预检（总开关 / 场景开关 / 设备节点），命中就毫秒级返回 2；
+    输出先写 syslog，只有 stderr 是终端时才额外打一行。camera.py 的
+    cv2/numpy 改为延迟导入。
+  * auth.py：同一预检（仅真摄像头路径）+ _log 的 stderr 兜底加 isatty 限制。
+  * polkit：随包安装 drop-in
+    /etc/systemd/system/polkit-agent-helper@.service.d/10-faceunlock-camera.conf
+    （PrivateDevices=no + DeviceAllow=char-video4linux rw），只放开视频设备，
+    其余沙箱限制不变；新增 `faceunlock polkit-camera [on|off|status]`，
+    doctor 增加 polkit 一行，panic 与 prerm/postrm 会收回该例外并
+    systemctl daemon-reload。
+  * 验收套件新增第 12~14 节；README 增加「Ubuntu 26.04 / polkit 127」一节。
+  * 安全语义不变：任何失败路径仍然是 PAM_IGNORE -> 回退密码。
+
+ -- faceunlock maintainers <faceunlock@example.com>  Wed, 08 Oct 2026 23:40:00 +0800
+
 faceunlock (0.1.1) noble; urgency=medium
 
   * Fix a dangerous false alarm in the read-only commands. The template store

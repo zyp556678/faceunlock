@@ -22,8 +22,12 @@ override_dh_auto_configure:
 	true
 
 override_dh_auto_build:
+	# -l:libpam.so.0（而不是 -lpam）：libpam.so 开发符号链接缺失/悬空时，ld 会
+	# 静默回退到 libpam.a，把 pam_* 符号静态链进模块 —— 在 PAM 栈里属于符号劫持。
 	$(CC) $(CPPFLAGS) $(CFLAGS) -shared -fPIC -O2 -Wall -Wextra \
-		-o pam/pam_faceunlock.so pam/pam_faceunlock.c -lpam
+		-o pam/pam_faceunlock.so pam/pam_faceunlock.c -l:libpam.so.0
+	@readelf -d pam/pam_faceunlock.so | grep -q 'libpam\.so\.0' || \
+		{ echo "ERROR: pam_faceunlock.so 未动态依赖 libpam.so.0"; exit 1; }
 
 override_dh_auto_test:
 	true

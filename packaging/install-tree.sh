@@ -53,6 +53,18 @@ install_core() {
     install -m 0644 packaging/org.faceunlock.manage.policy \
         "$d/usr/share/polkit-1/actions/org.faceunlock.manage.policy"
 
+    # --- polkit 授权框的摄像头权限（Ubuntu 26.04 / polkit 127 沙箱）---
+    # 两处：
+    #  1) /usr/share/faceunlock/...  权威正文，faceunlock polkit-camera on 用它重写；
+    #  2) /etc/systemd/system/polkit-agent-helper@.service.d/...  生效的 drop-in。
+    #     drop-in 默认随包安装；`faceunlock polkit-camera off` / `faceunlock panic`
+    #     会删掉它，把 polkit 恢复成上游强沙箱（授权框只认密码）。
+    #     它是 conffile：用户删掉后，同版本的升级不会把它偷偷装回来。
+    install -m 0644 "packaging/polkit-agent-helper@.service.d/10-faceunlock-camera.conf" \
+        "$d/usr/share/faceunlock/polkit-agent-helper-camera.conf"
+    install -D -m 0644 "packaging/polkit-agent-helper@.service.d/10-faceunlock-camera.conf" \
+        "$d/etc/systemd/system/polkit-agent-helper@.service.d/10-faceunlock-camera.conf"
+
     # --- 默认配置（conffile）---
     install -d "$d/etc/faceunlock"
     install -m 0644 packaging/config.json "$d/etc/faceunlock/config.json"

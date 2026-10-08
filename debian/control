@@ -33,6 +33,18 @@ Description: face recognition login for Linux (PAM module + management CLI)
  .
  安全定位：便捷因子。任何失败都会回退密码，绝不锁死系统；纯 RGB 摄像头
  无法防照片翻拍。
+ .
+ Ubuntu 26.04 (polkit 127) runs the pkexec authentication helper inside a
+ hardened systemd sandbox (PrivateDevices=yes, DevicePolicy=strict), which hides
+ /dev/video* from the PAM stack. This package therefore ships a systemd drop-in
+ that re-allows *video devices only* for polkit-agent-helper@.service, so face
+ authentication also works in graphical authorization dialogs. Disable it with
+ `faceunlock polkit-camera off`; the login screen, lock screen, sudo and su are
+ unaffected, only pkexec falls back to the password.
+ .
+ 授权框（pkexec）的人脸能力靠一个 systemd drop-in 放开 polkit helper 的**视频设备**
+ 权限换取（Ubuntu 26.04 / polkit 127 的沙箱会隐藏 /dev/video*）。不想接受这个取舍
+ 可执行 `sudo faceunlock polkit-camera off`，其它场景不受影响。
 
 Package: faceunlock-gui
 Architecture: amd64
@@ -80,3 +92,16 @@ Description: face recognition login for Linux - complete bundle (核心 + 图形
  .
  安全定位与拆分包一致：便捷因子，任何失败都回退密码，绝不锁死系统；
  纯 RGB 摄像头无法防照片翻拍。
+ .
+ Ubuntu 26.04 (polkit 127) sandboxes the pkexec authentication helper
+ (PrivateDevices=yes), hiding /dev/video* from the PAM stack, and its stderr is
+ part of the polkit<->agent protocol stream. This version therefore (a) skips
+ face auth in milliseconds when no video device is visible, (b) never writes to
+ a non-tty stderr from the PAM helper, and (c) ships a systemd drop-in that
+ re-allows *video devices only* for polkit-agent-helper@.service, so face
+ authentication also works in graphical authorization dialogs. Disable that with
+ `faceunlock polkit-camera off`; only pkexec falls back to the password.
+ .
+ 授权框（pkexec）的人脸能力靠一个 systemd drop-in 放开 polkit helper 的**视频设备**
+ 权限换取；沙箱里没有摄像头时会毫秒级回退密码（不再卡住授权框）。
+ 不想要该例外可执行 `sudo faceunlock polkit-camera off`。

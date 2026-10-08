@@ -23,6 +23,19 @@ if [ -f /etc/pam.d/common-auth ] && grep -q 'pam_faceunlock\.so' /etc/pam.d/comm
     sed -i '/pam_faceunlock\.so/d' /etc/pam.d/common-auth || true
 fi
 
+# polkit 授权框（pkexec）的摄像头例外：本包一旦被移除，就不该继续放宽
+# polkit 自己的沙箱，所以在包内文件消失之前撤掉 drop-in 并让 systemd 重读。
+# 升级（$1 = upgrade）时不动：同版本的 conffile 由 dpkg 管理，postinst 会
+# 负责 daemon-reload。
+if [ "${1:-}" = "remove" ] && \
+   [ -f /etc/systemd/system/polkit-agent-helper@.service.d/10-faceunlock-camera.conf ]; then
+    rm -f /etc/systemd/system/polkit-agent-helper@.service.d/10-faceunlock-camera.conf
+    rmdir /etc/systemd/system/polkit-agent-helper@.service.d 2>/dev/null || true
+    if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
+        systemctl daemon-reload >/dev/null 2>&1 || true
+    fi
+fi
+
 #DEBHELPER#
 
 exit 0

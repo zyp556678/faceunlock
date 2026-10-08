@@ -2,14 +2,21 @@
 
 为什么不用 cv.VideoCapture(0) 的默认后端：随包分发的 opencv 是 headless wheel，
 默认会尝试 ffmpeg/gstreamer；显式指定 CAP_V4L2 行为最稳定且零额外依赖。
+
+**cv2 / numpy 延迟到真正用的时候才 import**（本模块只在两个函数体里用到它们，
+类型标注交给 TYPE_CHECKING + `from __future__ import annotations`）。
+理由：PAM 认证路径上"这台机器现在没有摄像头"是常态（polkit 127 的沙箱里必然
+如此），而 import cv2 本机实测要几百毫秒到数秒。把导入推迟，预检路径
+（faceunlock/preflight.py）就能在毫秒级给出"不适用"，让密码提示立刻出现。
 """
 from __future__ import annotations
 
 import time
-from typing import Iterator
+from typing import TYPE_CHECKING, Iterator
 
-import cv2 as cv
-import numpy as np
+if TYPE_CHECKING:  # 只给类型检查器看，运行时绝不导入这两个重家伙
+    import cv2 as cv
+    import numpy as np
 
 
 class CameraError(Exception):
@@ -30,6 +37,8 @@ class Camera:
         self._cap: cv.VideoCapture | None = None
 
     def open(self) -> None:
+        import cv2 as cv  # 延迟导入，见模块 docstring
+
         cap = cv.VideoCapture(self.device, cv.CAP_V4L2)
         if not cap.isOpened():
             cap.release()
@@ -87,6 +96,8 @@ class Camera:
 
 
 def encode_jpeg(frame: np.ndarray, quality: int = 80) -> bytes:
+    import cv2 as cv  # 延迟导入，见模块 docstring
+
     ok, buf = cv.imencode(".jpg", frame, [int(cv.IMWRITE_JPEG_QUALITY), quality])
     if not ok:
         raise CameraError("JPEG 编码失败")

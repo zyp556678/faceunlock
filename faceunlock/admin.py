@@ -329,6 +329,26 @@ def cmd_doctor(_: dict) -> dict:
         checks.append({"name": "PAM", "status": "warn",
                        "detail": "profile 未安装，人脸登录尚未生效"})
 
+    # polkit 授权框（pkexec）—— Ubuntu 26.04 / polkit 127 的沙箱
+    # 这里只在"本机确实是 socket 激活 + 强沙箱"时才提醒，老版本 polkit 直接标 ok。
+    try:
+        from . import polkitctl
+        ps = polkitctl.status()
+        if not ps["unit_present"]:
+            checks.append({"name": "polkit", "status": "ok",
+                           "detail": "本机 polkit 无 socket 激活沙箱，无需处理"})
+        elif ps.get("camera_allowed"):
+            checks.append({"name": "polkit", "status": "ok",
+                           "detail": "授权框可用摄像头（已放开 video4linux）"})
+        else:
+            checks.append({"name": "polkit", "status": "warn",
+                           "detail": (f"授权框拿不到摄像头（{ps.get('detail')}）；"
+                                      f"可用 sudo faceunlock polkit-camera on 修复，"
+                                      f"或忽略（授权框只走密码）")})
+    except Exception as e:  # 自检本身绝不能因此失败
+        checks.append({"name": "polkit", "status": "warn",
+                       "detail": f"无法检测 polkit 沙箱状态: {e}"})
+
     # 配置
     cfg = config_mod.load()
     checks.append({"name": "配置", "status": "ok" if cfg.get("enabled") else "warn",

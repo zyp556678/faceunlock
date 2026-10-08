@@ -117,7 +117,11 @@ def disable() -> tuple[bool, str]:
 
 
 def panic() -> tuple[bool, str]:
-    """一键还原：从 PAM 栈移除 + 关闭总开关。用于"人脸出问题进不去系统"。"""
+    """一键还原：从 PAM 栈移除 + 关闭总开关 + 收回 polkit 沙箱例外。
+
+    这里的语义是"让我一定能用密码进系统"，所以连 drop-in 也一并撤掉：
+    polkit 恢复上游强沙箱，授权框只认密码（详见 polkitctl 的注释）。
+    """
     ok, msg = disable()
     try:
         from . import config as config_mod
@@ -126,6 +130,13 @@ def panic() -> tuple[bool, str]:
         config_mod.save(cfg)
     except Exception as e:
         msg += f"（配置关闭失败: {e}）"
+    try:
+        from . import polkitctl
+        pok, pmsg = polkitctl.disable()
+        ok = ok and pok
+        msg += f"；polkit 摄像头例外：{pmsg}"
+    except Exception as e:
+        msg += f"（polkit 摄像头例外收回失败: {e}）"
     return ok, f"panic 完成：{msg}；总开关已置为 false"
 
 
