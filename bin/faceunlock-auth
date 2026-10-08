@@ -12,6 +12,13 @@
   2  不适用/不确定         -> PAM_IGNORE（未录入、未启用、无摄像头、冷却中、远程、异常）
 
 绝不返回"拒绝"以外的第三态给 PAM：所有异常路径都是 2，保证永远能回退密码。
+
+性能约束（Ubuntu 26.04 实测得出，勿删）：
+  本脚本先做一次**不 import OpenCV** 的廉价预检（_fast_reason），命中就立刻
+  返回 2。polkit 127 把 polkit-1 的 PAM 栈关进 PrivateDevices=yes 的沙箱，
+  那里没有 /dev/video*，摄像头必然打不开；没有预检就要先花 5~6.5 s CPU 导入
+  OpenCV 并加载 ONNX 模型，再撞上 C 模块的 8 秒兜底 alarm（日志里的
+  `helper_exit=-1`），用户看到的是授权框卡住、密码也输不进去。
 """
 from __future__ import annotations
 
@@ -26,32 +33,99 @@ for _p in (os.path.join(_BASE, "vendor"), _BASE):
     if os.path.isdir(_p) and _p not in sys.path:
         sys.path.insert(0, _p)
 
-from faceunlock import EXIT_NOT_APPLICABLE  # noqa: E402
+from faceunlock import EXIT_MATCH, EXIT_NOT_APPLICABLE  # noqa: E402
+
+
+def _log(msg: str) -> None:
+    """写 syslog（结构化事实来源）；**只在 stderr 是终端时**才额外打一行。
+
+    为什么不无脑写 stderr（Ubuntu 26.04 / polkit 127 实测）：
+      * polkit 把 polkit-agent-helper-1 起成 socket 激活的服务
+        （StandardInput/Output=socket），那里 stderr 不是可用的日志通道：
+        journal 里看不到这些文本，写入还会失败（助手会以 120 退出，
+        即 CPython 刷不出标准流的专用退出码）；
+      * 更糟的是这些字节混进 polkit 与 gnome-shell 的协议流后，对方解析失败
+        → 每秒重建一次授权框 → pam_unix 收到空密码/EOF
+        （conversation failed / auth could not identify password）
+        → 用户根本来不及输入密码；
+      * sudo / su 的终端里 stderr 是 tty，保留"人脸识别通过（相似度 …）"
+        这行反馈对用户是有用的。
+    syslog 分支先写且立刻返回，所以正常场景下 stderr 只是可选的锦上添花。
+    """
+    try:
+        import syslog
+        syslog.openlog("faceunlock")
+        syslog.syslog(syslog.LOG_NOTICE, msg)
+        syslog.closelog()
+        logged = True
+    except Exception:
+        logged = False
+    try:
+        if sys.stderr is not None and sys.stderr.isatty():
+            print(f"faceunlock: {msg}", file=sys.stderr)
+            sys.stderr.flush()
+    except Exception:
+        pass
+    if not logged:
+        # syslog 不可用又不在终端：宁可什么都不写，也绝不污染别人的协议通道
+        pass
+
+
+def _fast_reason(user: str, service: str, rhost: str) -> str | None:
+    """不必加载识别引擎（cv2/ONNX）就能判定的"不适用"原因；None 表示继续。
+
+    只 import faceunlock.config（纯 json）与 faceunlock.preflight（纯 os/glob）。
+    任何异常都返回 None：预检绝不允许把用户挡在密码认证之外。
+    """
+    if rhost:
+        return "远程会话不使用人脸"
+    try:
+        from faceunlock import config as config_mod
+        from faceunlock import preflight
+
+        cfg = config_mod.load()
+        if not cfg.get("enabled", True):
+            return "人脸认证总开关已关闭"
+        if not config_mod.service_enabled(cfg, service):
+            return f"服务 {service} 未启用人脸"
+        device = int((cfg.get("camera") or {}).get("device", 0))
+        return preflight.camera_unavailable_reason(device)
+    except Exception:
+        return None
 
 
 def main(argv: list[str]) -> int:
     if len(argv) < 3:
-        print("usage: faceunlock-auth <user> <service> [rhost] [tty]", file=sys.stderr)
+        _log("用法: faceunlock-auth <user> <service> [rhost] [tty]")
         return EXIT_NOT_APPLICABLE
     user, service = argv[1], argv[2]
     rhost = argv[3] if len(argv) > 3 else ""
     tty = argv[4] if len(argv) > 4 else ""
 
     try:
+        # ---- 廉价预检：命中就毫秒级回退密码（不加载 OpenCV）----
+        reason = _fast_reason(user, service, rhost)
+        if reason is not None:
+            _log(f"user={user} service={service} code={EXIT_NOT_APPLICABLE} "
+                 f"reason={reason}（预检短路，未加载识别引擎）")
+            return EXIT_NOT_APPLICABLE
+
+        # ---- 完整流程（这里才开始 import cv2/numpy/ONNX）----
         from faceunlock.auth import authenticate
+
         res = authenticate(user, service, rhost=rhost, tty=tty)
-        # 所有输出一律走 stderr —— **绝不写 stdout**。
+        # 所有输出一律走 _log —— **绝不写 stdout**。
         # PAM 应用可能把 stdout 当作自己的协议通道（polkit-agent-helper-1 就是：
         # 它在 stdout 上写 "PAM_TEXT_INFO ..."/"SUCCESS" 与 gnome-shell 通信）。
         # 我们往 stdout 多写一行普通文本，就会让对方协议解析失败，
         # 表现为"人脸识别成功但授权对话框无限重试"。
-        if res.code == 0:
-            print(f"人脸识别通过：{user}（相似度 {res.score:.3f}）", file=sys.stderr)
+        if res.code == EXIT_MATCH:
+            _log(f"人脸识别通过：{user}（相似度 {res.score:.3f}）")
         else:
-            print(f"faceunlock: 未通过（{res.reason}），已回退密码认证", file=sys.stderr)
+            _log(f"未通过（{res.reason}），已回退密码认证")
         return res.code
     except Exception as e:  # 任何意外都必须回退密码
-        print(f"faceunlock: 内部错误({e})，已回退密码认证", file=sys.stderr)
+        _log(f"内部错误({e})，已回退密码认证")
         return EXIT_NOT_APPLICABLE
 
 

@@ -200,11 +200,161 @@ else
     fi
     # C 模块本身也必须把子进程的 stdout 接走
     if grep -q 'STDOUT_FILENO' "$repo/pam/pam_faceunlock.c" 2>/dev/null; then
-        ok "pam_faceunlock.so 会把助手的 stdout 重定向到 /dev/null（stderr 保留供排障）"
+        ok "pam_faceunlock.so 会把助手的 stdout 重定向到 /dev/null"
     else
         bad "pam_faceunlock.c 没有重定向子进程 stdout（polkit 场景会每秒重试、永不通过）"
     fi
+    # 模块必须动态依赖 libpam：静态链进 libpam.a 会让它自带 pam_* 符号定义，
+    # 在同一个进程里劫持 PAM 栈（构建脚本里踩到过一次 dangling libpam.so 的坑）
+    mod=/usr/lib/$ARCH_TRIPLET/security/pam_faceunlock.so
+    if [ -r "$mod" ] && command -v readelf >/dev/null 2>&1; then
+        if readelf -d "$mod" | grep -q 'libpam\.so\.0'; then
+            ok "pam_faceunlock.so 动态依赖 libpam.so.0"
+        else
+            bad "pam_faceunlock.so 未动态依赖 libpam.so.0（疑似静态链了 libpam.a）"
+        fi
+        if command -v nm >/dev/null 2>&1 && \
+           nm -D --defined-only "$mod" 2>/dev/null | grep -q ' T pam_get_user'; then
+            bad "pam_faceunlock.so 自带 pam_get_user 定义（静态链接会劫持 PAM 符号）"
+        else
+            ok "pam_faceunlock.so 未导出 pam_* 符号（无符号劫持）"
+        fi
+    fi
     rm -f "$so" "$se"
+fi
+
+hdr "12. polkit 127 沙箱：摄像头不可见时必须毫秒级回退密码"
+# Ubuntu 26.04 起，polkit-1 的 PAM 栈跑在 socket 激活的
+# polkit-agent-helper@.service 里，默认 PrivateDevices=yes + DevicePolicy=strict：
+# /dev/video* 根本不在沙箱的 /dev 里。这一节用 systemd-run 复现同样的沙箱，
+# 断言"没有摄像头时要在毫秒级（而不是 OpenCV 加载 + 8 秒兜底超时）回退密码"。
+if ! command -v systemd-run >/dev/null 2>&1 || [ ! -d /run/systemd/system ]; then
+    skip "没有可用的 systemd-run，无法构造等价沙箱"
+else
+    if systemd-run --quiet --wait --collect -p PrivateDevices=yes \
+           /usr/bin/test -c /dev/video0 >/dev/null 2>&1; then
+        bad "PrivateDevices=yes 的沙箱里还能看到 /dev/video0 —— 本节的复现前提不成立"
+    else
+        ok "沙箱里看不到 /dev/video0（= polkit 127 helper 的默认环境）"
+    fi
+    if [ -n "$USER_TO_TEST" ]; then
+        start=$(date +%s%N)
+        systemd-run --quiet --wait --collect -p PrivateDevices=yes \
+            /usr/libexec/faceunlock-auth "$USER_TO_TEST" polkit-1 >/dev/null 2>&1
+        ms=$(( ($(date +%s%N) - start) / 1000000 ))
+        if [ "$ms" -lt 1500 ]; then
+            ok "沙箱内助手 ${ms}ms 内返回（预检短路，未加载 OpenCV）"
+        else
+            bad "沙箱内助手耗时 ${ms}ms —— 没有快速回退，用户会在授权框前干等"
+        fi
+    fi
+    # 整条真实 PAM 栈（polkit-1 → common-auth → pam_faceunlock.so）在沙箱里的表现
+    if command -v pamtester >/dev/null 2>&1 && [ -n "$USER_TO_TEST" ]; then
+        start=$(date +%s%N)
+        out=$(echo "definitely-wrong" | timeout 30 systemd-run --quiet --wait --collect --pipe \
+                -p PrivateDevices=yes -p DevicePolicy=strict -p DeviceAllow=/dev/null \
+                pamtester polkit-1 "$USER_TO_TEST" authenticate 2>&1)
+        ms=$(( ($(date +%s%N) - start) / 1000000 ))
+        if [ "$ms" -lt 1500 ]; then
+            ok "沙箱内真实 PAM 栈 ${ms}ms 内回退密码"
+        else
+            bad "沙箱内真实 PAM 栈耗时 ${ms}ms（应毫秒级回退）"
+        fi
+        echo "$out" | grep -q 'Password:' \
+            && ok "沙箱内仍然弹出 Password: 提示（回退链路完整）" \
+            || bad "沙箱内没出现密码提示：$(echo "$out" | tr '\n' ' ' | head -c 160)"
+    else
+        skip "没有 pamtester，跳过沙箱内的整栈检查"
+    fi
+fi
+
+hdr "13. polkit 授权框的摄像头权限（systemd drop-in）"
+dropin=/etc/systemd/system/polkit-agent-helper@.service.d/10-faceunlock-camera.conf
+if [ ! -f /usr/lib/systemd/system/polkit-agent-helper@.service ]; then
+    skip "本机 polkit 不使用 socket 激活的 helper（老版本），无需 drop-in"
+elif [ ! -f "$dropin" ]; then
+    skip "drop-in 未安装：授权框只走密码（sudo faceunlock polkit-camera on 可启用）"
+else
+    ok "drop-in 存在：$dropin"
+    if [ -f /usr/share/faceunlock/polkit-agent-helper-camera.conf ] && \
+       cmp -s /usr/share/faceunlock/polkit-agent-helper-camera.conf "$dropin"; then
+        ok "drop-in 内容与随包权威副本一致"
+    else
+        bad "drop-in 与 /usr/share/faceunlock/polkit-agent-helper-camera.conf 不一致"
+    fi
+    private=$(systemctl show polkit-agent-helper@0.service -p PrivateDevices --value 2>/dev/null)
+    allow=$(systemctl show polkit-agent-helper@0.service -p DeviceAllow --value 2>/dev/null)
+    [ "$private" = "no" ] \
+        && ok "运行时 PrivateDevices=no（沙箱不再隐藏 /dev/video*）" \
+        || bad "运行时 PrivateDevices=$private —— 需要 systemctl daemon-reload"
+    echo "$allow" | grep -q 'video4linux' \
+        && ok "运行时 DeviceAllow 含 video4linux" \
+        || bad "运行时 DeviceAllow 不含 video4linux：$allow"
+    # 等价沙箱里"两行 drop-in"必须正好让设备可见，且不多给别的设备
+    if systemd-run --quiet --wait --collect -p PrivateDevices=no \
+           -p DevicePolicy=strict -p DeviceAllow="/dev/null rw" \
+           -p DeviceAllow="char-video4linux rw" /usr/bin/test -c /dev/video0 >/dev/null 2>&1; then
+        ok "等价沙箱里 /dev/video0 可见（drop-in 的两行确实起作用）"
+    else
+        bad "等价沙箱里仍看不到 /dev/video0 —— drop-in 可能没生效"
+    fi
+    if systemd-run --quiet --wait --collect -p PrivateDevices=no \
+           -p DevicePolicy=strict -p DeviceAllow="/dev/null rw" \
+           -p DeviceAllow="char-video4linux rw" /usr/bin/test -c /dev/sda >/dev/null 2>&1; then
+        ok "（提示）/dev/sda 也可见：说明主机确实有这个节点，不是沙箱漏洞"
+    else
+        ok "除视频设备外的块设备仍不可见（DevicePolicy=strict 保持生效）"
+    fi
+fi
+
+hdr "14. 助手 stderr 隔离（polkit 127 的 EPIPE 回归）"
+# 关键回归：polkit 127 里 stderr 既写不通、又是协议流的一部分。旧版助手会因此
+# 以 120 退出（CPython 刷不出标准流），并被 gnome-shell 当成协议垃圾，
+# 表现为"授权框每秒重试、密码也输不进去"。这里把 stderr 接到写不通的管道来复现。
+if [ "$NOFACE" = "1" ]; then
+    skip "按要求跳过（需要真实调用一次助手）"
+else
+    res=$(FU_USER_TEST="${USER_TO_TEST:-nobody}" python3 - <<'PY' 2>/dev/null
+import os, subprocess
+u = os.environ.get("FU_USER_TEST") or "nobody"
+r, w = os.pipe(); os.close(r)          # 读端关闭：写 stderr 必然 EPIPE
+p = subprocess.Popen(["/usr/libexec/faceunlock-auth", u, "polkit-1", "", ""],
+                     stderr=w, stdout=subprocess.PIPE)
+os.close(w)
+out = p.stdout.read()
+print(f"{p.wait()} {len(out)}")
+PY
+)
+    rc=${res%% *}; so=${res##* }
+    case "$res" in
+        "")  bad "无法启动助手做 stderr 隔离测试" ;;
+        *)
+            if [ "$rc" = "120" ]; then
+                bad "助手在 stderr 不可写时以 120 退出（旧版行为：授权框会每秒重试）"
+            elif [ "$so" != "0" ]; then
+                bad "助手往 stdout 写了 $so 字节（会破坏 polkit 协议）"
+            else
+                ok "stderr 不可写时助手仍正常返回（rc=$rc，stdout 干净）"
+            fi
+            ;;
+    esac
+    # C 模块侧：stderr 只在是终端时保留；并且 fork 之前先看 /dev 有没有视频设备
+    if grep -q 'isatty(STDERR_FILENO)' "$repo/pam/pam_faceunlock.c" 2>/dev/null; then
+        ok "pam_faceunlock.c 只在 stderr 是终端时才保留它（其余场景接 /dev/null）"
+    else
+        bad "pam_faceunlock.c 没有对 stderr 做 isatty 判断（polkit 场景会 EPIPE/污染协议）"
+    fi
+    if grep -q 'has_video_device' "$repo/pam/pam_faceunlock.c" 2>/dev/null && \
+       grep -q 'video_probe' "$repo/pam/pam_faceunlock.c" 2>/dev/null; then
+        ok "pam_faceunlock.c 含 /dev 视频设备预检（video_probe=0 可关）"
+    else
+        bad "pam_faceunlock.c 缺少 /dev 视频设备预检（沙箱里会白等到超时）"
+    fi
+    if grep -q 'camera_unavailable_reason' "$repo/faceunlock/preflight.py" 2>/dev/null; then
+        ok "faceunlock/preflight.py 提供廉价预检（不 import cv2）"
+    else
+        bad "缺少 faceunlock/preflight.py 的预检实现"
+    fi
 fi
 
 printf "\n\033[1m结果: %d 通过, %d 失败, %d 跳过\033[0m\n" "$PASS" "$FAIL" "$SKIP"

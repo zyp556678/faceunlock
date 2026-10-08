@@ -335,6 +335,42 @@ def cmd_service(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_polkit_camera(args: argparse.Namespace) -> int:
+    """polkit 授权框（pkexec）的摄像头权限开关。
+
+    Ubuntu 26.04 / polkit 127 把 polkit-1 的 PAM 栈放进 PrivateDevices=yes
+    的沙箱，里面没有 /dev/video*，人脸认证必然打不开摄像头。`on` 会写一个
+    只放开"视频设备"的 systemd drop-in，`off` 则把 polkit 恢复成上游强沙箱。
+    """
+    from . import polkitctl
+
+    if args.state in ("on", "off"):
+        _need_root()
+        ok, msg = polkitctl.enable() if args.state == "on" else polkitctl.disable()
+        print(msg)
+        if ok and args.state == "on":
+            print("\n说明：只放开了 polkit-agent-helper@.service 的**视频设备**访问权，"
+                  "\n      DevicePolicy=strict 仍然拒绝其它设备，配置文件系统与系统调用"
+                  "\n      过滤等加固一律不变；授权框任何时候都能改用密码。")
+        if ok and args.state == "off":
+            print("授权框现在只会提示输入密码（人脸认证在 pkexec 场景不再尝试）。")
+        return 0 if ok else 1
+
+    st = polkitctl.status()
+    if args.json:
+        print(json.dumps(st, ensure_ascii=False, indent=2))
+        return 0
+    print(f"polkit helper 单元 : {'存在' if st['unit_present'] else '不存在（无需处理）'}")
+    print(f"drop-in            : {st['dropin_path']}")
+    print(f"                     {'已安装' if st['dropin_present'] else '未安装'}")
+    print(f"PrivateDevices     : {st['private_devices']}")
+    print(f"DeviceAllow        : {st['device_allow']}")
+    if st.get("camera_allowed") is not None:
+        print(f"授权框可用摄像头   : {'是' if st['camera_allowed'] else '否'}")
+    print(f"说明               : {st['detail']}")
+    return 0
+
+
 def cmd_admin(args: argparse.Namespace) -> int:
     """把参数当 JSON 请求交给 admin 层（调试用）。"""
     from .admin import handle
@@ -399,6 +435,11 @@ def build_parser() -> argparse.ArgumentParser:
     sp = add("service", cmd_service, "开关某个场景")
     sp.add_argument("name")
     sp.add_argument("state", nargs="?", choices=["on", "off"])
+
+    sp = add("polkit-camera", cmd_polkit_camera,
+             "polkit 授权框的摄像头权限（Ubuntu 26 沙箱，需要 root 才能改）")
+    sp.add_argument("state", nargs="?", choices=["on", "off"])
+    sp.add_argument("--json", action="store_true")
 
     sp = add("admin", cmd_admin, "直接调用特权层（调试）")
     sp.add_argument("request")

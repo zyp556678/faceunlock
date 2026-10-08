@@ -82,15 +82,28 @@ class RateLimiter:
 
 
 def _log(msg: str, debug: bool = False) -> None:
-    """写 syslog；非 root 或不可用时退回 stderr。"""
+    """写 syslog；syslog 不可用**且 stderr 是终端**时才退回 stderr。
+
+    为什么加 isatty 限制：在 polkit 的 PAM 栈里（Ubuntu 26.04 起
+    polkit-agent-helper@.service 是 socket 激活的服务）stderr 既写不通、
+    又是 polkit 与 gnome-shell 之间的协议流的一部分。往里写会让授权框
+    每秒重建、用户连密码都输不进去（详见 pam/pam_faceunlock.c 的注释）。
+    sudo / su 的终端里 isatty 为真，反馈照旧。
+    """
     try:
         import syslog
         syslog.openlog("faceunlock")
         syslog.syslog(syslog.LOG_NOTICE, msg)
         syslog.closelog()
+        return
     except Exception:
+        pass
+    try:
         import sys
-        print(f"faceunlock: {msg}", file=sys.stderr)
+        if sys.stderr is not None and sys.stderr.isatty():
+            print(f"faceunlock: {msg}", file=sys.stderr)
+    except Exception:
+        pass
 
 
 def authenticate(user: str, service: str, *, cfg: dict[str, Any] | None = None,
@@ -129,6 +142,19 @@ def authenticate(user: str, service: str, *, cfg: dict[str, Any] | None = None,
         return done(EXIT_NOT_APPLICABLE, f"模板校验失败，拒绝使用: {e}")
     if known.shape[0] == 0:
         return done(EXIT_NOT_APPLICABLE, "该用户未录入人脸")
+
+    # 廉价预检：还没有摄像头设备节点就**不要**加载 ONNX 模型、不要尝试打开设备。
+    # polkit 127 的沙箱（PrivateDevices=yes）里 /dev/video* 不存在，这里是必经之路；
+    # 少了这一步，每次授权都要白等模型加载（本机实测 5~6.5 s CPU）再撞 8 秒兜底
+    # 超时，用户在授权框前看不到密码提示。预检失败一律回退密码，语义不变。
+    # 只在用真摄像头时预检：单元测试会注入假 camera_factory，不受影响。
+    if camera_factory is Camera:
+        from . import preflight
+
+        reason = preflight.camera_unavailable_reason(
+            int((cfg.get("camera") or {}).get("device", 0)))
+        if reason:
+            return done(EXIT_NOT_APPLICABLE, f"摄像头不可用: {reason}")
 
     if engine is None:
         try:

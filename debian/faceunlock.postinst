@@ -28,6 +28,15 @@ if [ -f /run/faceunlock-pam-was-enabled ]; then
     fi
 fi
 
+# polkit 授权框（pkexec）的摄像头权限：随包安装的 drop-in 要让 systemd 重新
+# 读一遍单元，新的 polkit-agent-helper 实例才会带上 DeviceAllow=char-video4linux。
+# 用户若已用 `faceunlock polkit-camera off` 删掉该文件，这里不做任何恢复
+# （它是 conffile，尊重用户的删除）。
+if [ -f /etc/systemd/system/polkit-agent-helper@.service.d/10-faceunlock-camera.conf ] && \
+   [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
+    systemctl daemon-reload >/dev/null 2>&1 || true
+fi
+
 #DEBHELPER#
 
 exit 0
