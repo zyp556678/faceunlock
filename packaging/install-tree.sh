@@ -24,6 +24,13 @@ install_core() {
     cp -a vendor     "$d/usr/lib/faceunlock/"
     find "$d/usr/lib/faceunlock" -name '__pycache__' -type d -prune -exec rm -rf {} + || true
 
+    # 权限归一化：`cp -a` 会把开发机上的权限原样抄进包里（只受 umask/编辑器影响）。
+    # 踩过的坑：新增的 .py 在开发机上生成时是 0600，装完普通用户 import 直接
+    # PermissionError —— `faceunlock polkit-camera status` 就是这么崩的。
+    # 统一成目录 0755 / 文件 0644；vendor 里只有 .so/.pyi，0644 足够（dlopen 不需要 x 位）。
+    find "$d/usr/lib/faceunlock" -type d -exec chmod 0755 {} +
+    find "$d/usr/lib/faceunlock" -type f -exec chmod 0644 {} +
+
     # --- 模型（拒绝 0 字节残留，踩过一次）---
     install -d "$d/usr/share/faceunlock/models"
     local m

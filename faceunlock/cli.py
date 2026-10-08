@@ -438,7 +438,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = add("polkit-camera", cmd_polkit_camera,
              "polkit 授权框的摄像头权限（Ubuntu 26 沙箱，需要 root 才能改）")
-    sp.add_argument("state", nargs="?", choices=["on", "off"])
+    # 注意把 status 也列进 choices：不带参数等价于 status，但文档/脚本里写
+    # `polkit-camera status` 更明确 —— 曾经漏掉它导致该写法被 argparse 拒绝。
+    sp.add_argument("state", nargs="?", choices=["on", "off", "status"],
+                    help="on=放开摄像头权限，off=恢复上游强沙箱，status=查看（默认）")
     sp.add_argument("--json", action="store_true")
 
     sp = add("admin", cmd_admin, "直接调用特权层（调试）")

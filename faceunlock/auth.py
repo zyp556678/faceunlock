@@ -41,6 +41,20 @@ class RateLimiter:
     """失败限速：窗口内失败次数超限 -> 冷却期内直接回退密码。
 
     存在 /var/lib/faceunlock/state.json（root 0600），普通用户无法清零。
+
+    **写入必须"尽力而为"**（Ubuntu 26.04 / polkit 127 实测教训）：
+    polkit 把 polkit-1 的 PAM 栈放进 ProtectSystem=strict 的沙箱，整个文件系统
+    （除了 /dev、/proc、/sys）是**只读**的，而模板库在 /var/lib/faceunlock。
+    2026-10-08 的真机日志：
+
+        service=polkit-1 code=2 reason=识别过程异常:
+        [Errno 30] Read-only file system: '/var/lib/faceunlock/.tmp-xxxx' frames=2
+
+    这条 reason 来自 authenticate() 的兜底 except —— 真实经过是**人脸已经匹配
+    ≥2 帧**，紧接着 clear() 写状态时抛 EROFS，把这次成功匹配丢掉了：授权框
+    永远拿不到授权，用户看到的是"人脸过了但还是要输密码"。
+    限速是加固手段，绝不能反过来否决一次成功的认证，所以这里吞掉写失败并记日志
+    （只读环境下降级为"不记录失败次数"，等于该场景下没有冷却，可接受）。
     """
 
     def __init__(self, store: TemplateStore, cfg: dict[str, Any]) -> None:
@@ -55,6 +69,15 @@ class RateLimiter:
         st.setdefault("failures", {})
         st.setdefault("cooldown", {})
         return st
+
+    def _save(self, st: dict[str, Any]) -> bool:
+        """保存限速状态；失败只降级（记日志），绝不向外抛异常。"""
+        try:
+            self.store.save_state(st)
+            return True
+        except OSError as e:
+            _log(f"限速状态写入失败（{e}），本次限速降级为不记录")
+            return False
 
     def blocked_for(self, user: str) -> int:
         """返回剩余冷却秒数，0 表示未被限速。"""
@@ -72,13 +95,13 @@ class RateLimiter:
         if len(hist) >= self.max_failures:
             st["cooldown"][user] = now + self.cooldown_s
             st["failures"][user] = []
-        self.store.save_state(st)
+        self._save(st)
 
     def clear(self, user: str) -> None:
         st = self._state()
         st["failures"].pop(user, None)
         st["cooldown"].pop(user, None)
-        self.store.save_state(st)
+        self._save(st)
 
 
 def _log(msg: str, debug: bool = False) -> None:

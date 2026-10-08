@@ -34,6 +34,15 @@ done
 [ -f /usr/bin/faceunlock-gui ] && ok "存在图形界面 /usr/bin/faceunlock-gui" \
     || skip "未安装图形界面（faceunlock-gui 子包）"
 
+# 打包权限：/usr/lib/faceunlock 下的文件必须对所有人可读。
+# 踩过的坑：install-tree.sh 用 cp -a 照抄开发机权限，新增的 .py 是 0600，
+# 装完普通用户 import 直接 PermissionError（`faceunlock polkit-camera status` 崩）。
+if [ -d /usr/lib/faceunlock ]; then
+    n=$(find /usr/lib/faceunlock -type f ! -perm -004 2>/dev/null | wc -l)
+    [ "$n" -eq 0 ] && ok "python/opencv 文件全部 world-readable（无 0600 残留）" \
+        || bad "$n 个文件对其他人不可读（0600？普通用户导入会 PermissionError）"
+fi
+
 hdr "2. 权限边界"
 store=/var/lib/faceunlock
 if [ -d "$store" ]; then
@@ -304,6 +313,18 @@ else
         ok "（提示）/dev/sda 也可见：说明主机确实有这个节点，不是沙箱漏洞"
     else
         ok "除视频设备外的块设备仍不可见（DevicePolicy=strict 保持生效）"
+    fi
+fi
+
+# 普通用户也必须能查状态（不需要 root）。
+# 踩过的坑：argparse 的 choices 漏了 status，`faceunlock polkit-camera status`
+# 被直接拒绝；另外新增的 .py 曾被装成 0600，普通用户导入会 PermissionError。
+if command -v faceunlock >/dev/null 2>&1 && [ -n "$USER_TO_TEST" ]; then
+    uout=$(su -s /bin/sh "$USER_TO_TEST" -c 'faceunlock polkit-camera status' 2>&1)
+    if echo "$uout" | grep -q 'PrivateDevices'; then
+        ok "普通用户可运行 faceunlock polkit-camera status（无需 root）"
+    else
+        bad "普通用户跑 polkit-camera status 失败：$(echo "$uout" | tr '\n' ' ' | head -c 160)"
     fi
 fi
 

@@ -7,6 +7,8 @@
   D. 越权：普通用户不能管理他人的人脸
   E. 特征输入校验：维度错误/NaN/零向量必须被拒
   F. 路径穿越：非法用户名不能构造出模板文件路径
+  G. 无摄像头 / 无人脸时的回退时延（必须快速回退密码）
+  H. 只读模板库（polkit 127 的 ProtectSystem=strict 沙箱）不能吞掉成功匹配
 
 全部在临时目录里跑，不碰 /var/lib 与 /etc。
 """
@@ -265,6 +267,87 @@ def test_no_face_latency() -> None:
     check("采集失败也快速返回（< 1.0s）", dt < 1000, f"实测 {dt:.0f} ms")
 
 
+def test_readonly_state() -> None:
+    """模板库只读时（polkit 127 的 ProtectSystem=strict 沙箱），限速状态写不进去
+    也**绝不能丢掉一次成功的人脸匹配**。
+
+    真机证据（2026-10-08，pkexec 授权框）：
+        service=polkit-1 code=2 reason=识别过程异常:
+        [Errno 30] Read-only file system: '/var/lib/faceunlock/.tmp-xxxx' frames=2
+    这条 reason 来自 authenticate() 的兜底 except —— 真实经过是人脸已经匹配 ≥2 帧，
+    紧跟的 limiter.clear() 抛 EROFS，把成功匹配变成了"不适用"：
+    pkexec 授权框永远拿不到授权（用户能看到摄像头灯亮、人脸也识别了，却仍然要输密码）。
+    """
+    print("\n=== H. 只读模板库（polkit 沙箱）不能吞掉成功匹配 ===")
+    import time as _time
+
+    from faceunlock import EXIT_MATCH, EXIT_NO_MATCH
+    from faceunlock.auth import authenticate
+
+    class ReadOnlyStore(TemplateStore):
+        """写 state.json 一定失败：等价于 ProtectSystem=strict 下的 /var/lib。"""
+
+        def save_state(self, st) -> None:
+            raise OSError(30, "Read-only file system")
+
+    class MatchedEngine:
+        """永远在人脸上拿到满分相似度。"""
+
+        def detect(self, frame):
+            return ["face"]
+
+        def largest(self, faces):
+            return faces[0] if faces else None
+
+        def embed(self, frame, face):
+            return emb(7)
+
+        def similarity(self, a, b) -> float:
+            return 1.0
+
+    class NoMatchEngine(MatchedEngine):
+        def similarity(self, a, b) -> float:
+            return 0.0
+
+    class OneFrameCamera:
+        def __init__(self, **kw) -> None:
+            self.kw = kw
+
+        def open(self) -> None:
+            pass
+
+        def read(self):
+            return np.zeros((720, 1280, 3), dtype=np.uint8)
+
+        def frames_until(self, deadline, max_frames=120, max_consecutive_failures=10):
+            while _time.monotonic() < deadline:
+                yield self.read()
+                _time.sleep(0.02)
+
+        def close(self) -> None:
+            pass
+
+    s = ReadOnlyStore()
+    s.delete_user("erin")
+    s.add_face("erin", "正面", emb(7))
+    cfg = config_mod.load()
+    cfg["services"]["selftest"] = True
+    cfg["timeout_ms"] = 3000
+    cfg["no_face_timeout_ms"] = 1000
+    cfg["required_frames"] = 2
+    cfg["window_frames"] = 3
+
+    res = authenticate("erin", "selftest", cfg=cfg, store=s,
+                       engine=MatchedEngine(), camera_factory=OneFrameCamera)
+    check("只读模板库下，人脸匹配仍然返回 EXIT_MATCH（授权框能拿到授权）",
+          res.code == EXIT_MATCH, f"code={res.code} reason={res.reason} score={res.score:.2f}")
+
+    res = authenticate("erin", "selftest", cfg=cfg, store=s,
+                       engine=NoMatchEngine(), camera_factory=OneFrameCamera)
+    check("只读模板库下，失败路径仍正常返回 EXIT_NO_MATCH（不是异常兜底）",
+          res.code == EXIT_NO_MATCH, f"code={res.code} reason={res.reason}")
+
+
 def main() -> int:
     print(f"faceunlock 安全属性自测（临时目录 {TMP}）")
     test_hmac()
@@ -274,6 +357,7 @@ def main() -> int:
     test_embedding_validation()
     test_path_traversal()
     test_no_face_latency()
+    test_readonly_state()
     print(f"\n结果: {len(PASS)} 通过, {len(FAIL)} 失败")
     if FAIL:
         print("失败项: " + ", ".join(FAIL))

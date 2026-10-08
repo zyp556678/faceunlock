@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 import sys
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 
 #: 安装根目录（开发态即仓库根目录）
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

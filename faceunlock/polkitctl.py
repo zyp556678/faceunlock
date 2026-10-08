@@ -69,7 +69,13 @@ def unit_present() -> bool:
 
 
 def properties() -> dict[str, str]:
-    """读**运行时**单元属性（写入 drop-in 后需要 daemon-reload 才会反映）。"""
+    """读**运行时**单元属性（写入 drop-in 后需要 daemon-reload 才会反映）。
+
+    注意：`systemctl show -p DeviceAllow` 对列表型属性会输出**多行**
+    （`DeviceAllow=char-rtc r` / `DeviceAllow=char-video4linux rw` / …），
+    必须累积而不是让后者覆盖前者 —— 否则最关键的 video4linux 那行会被
+    `/dev/null rw` 盖掉，把"授权框能开摄像头"误报成"不能"。
+    """
     if not systemd_present() or not unit_present():
         return {}
     rc, out = _run(["systemctl", "show", SERVICE, "-p", "PrivateDevices",
@@ -78,9 +84,13 @@ def properties() -> dict[str, str]:
         return {}
     props: dict[str, str] = {}
     for line in out.splitlines():
-        if "=" in line:
-            k, v = line.split("=", 1)
-            props[k] = v.strip()
+        if "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        k, v = k.strip(), v.strip()
+        if not v:
+            continue
+        props[k] = f"{props[k]} {v}" if k in props else v
     return props
 
 
